@@ -1,0 +1,572 @@
+{
+  "SQL": {
+    "overview": "Standard query language text typically transmitted over proprietary database wire protocols like TDS or PostgreSQL Wire Protocol.",
+    "transport": "TCP",
+    "communicationStyle": "Request-Response",
+    "useCases": ["Relational database querying", "Data definition operations", "Transaction management"],
+    "advantages": ["Universal standard for RDBMS", "Highly expressive declarative syntax"],
+    "disadvantages": ["Transport protocol varies by vendor", "Vulnerable to injection if not parameterized"],
+    "security": "Relies on underlying wire protocol encryption (e.g., TLS)",
+    "relatedProtocols": ["JDBC", "ODBC"]
+  },
+  "Redis (RESP)": {
+    "overview": "REdis Serialization Protocol, a simple, human-readable text-based protocol used for communication between Redis clients and the Redis server.",
+    "transport": "TCP",
+    "communicationStyle": "Request-Response, Pub/Sub",
+    "useCases": ["In-memory caching", "Session storage", "Message queuing"],
+    "advantages": ["Extremely fast parsing", "Human-readable for debugging"],
+    "disadvantages": ["Text-based nature adds slight overhead compared to pure binary", "Lacks native advanced streaming semantics without RESP3"],
+    "security": "Supports TLS (since Redis 6) and simple password authentication (AUTH)",
+    "relatedProtocols": ["Memcached"]
+  },
+  "MongoDB Wire": {
+    "overview": "A socket-based, request-response binary protocol used for communication with MongoDB databases.",
+    "transport": "TCP",
+    "communicationStyle": "Request-Response",
+    "useCases": ["Document database operations", "Aggregation pipelines", "Replica set communication"],
+    "advantages": ["Binary format is efficient for BSON data", "Supports compression (Snappy, zstd, zlib)"],
+    "disadvantages": ["Specific to MongoDB ecosystem", "Complex driver implementation required"],
+    "security": "Supports TLS/SSL and SASL authentication mechanisms (SCRAM)",
+    "relatedProtocols": ["SQL"]
+  },
+  "S3": {
+    "overview": "Amazon Simple Storage Service REST API, utilizing HTTP/HTTPS for object storage operations like PUT, GET, and DELETE.",
+    "transport": "TCP (HTTP/HTTPS)",
+    "communicationStyle": "RESTful Request-Response",
+    "useCases": ["Cloud object storage", "Backup and archive", "Static website hosting"],
+    "advantages": ["Ubiquitous industry standard for object storage", "Highly scalable and stateless"],
+    "disadvantages": ["HTTP overhead per request", "Eventual consistency on some operations historically"],
+    "security": "IAM policies, SigV4 request signing, TLS, Server-Side Encryption (SSE)",
+    "relatedProtocols": ["HTTP", "NFS"]
+  },
+  "JDBC": {
+    "overview": "Java Database Connectivity API and associated driver protocols for connecting Java applications to various relational databases.",
+    "transport": "Varies (TCP typical)",
+    "communicationStyle": "Request-Response",
+    "useCases": ["Enterprise Java applications", "Database connection pooling", "ORM integration (Hibernate)"],
+    "advantages": ["Standardized Java API across vendors", "Extensive ecosystem and tool support"],
+    "disadvantages": ["Heavyweight driver dependencies", "Synchronous blocking API historically"],
+    "security": "Relies on underlying driver and database security configurations",
+    "relatedProtocols": ["ODBC", "SQL"]
+  },
+  "ODBC": {
+    "overview": "Open Database Connectivity, a standard C programming interface for accessing database management systems.",
+    "transport": "Varies (TCP typical)",
+    "communicationStyle": "Request-Response",
+    "useCases": ["Cross-platform database access", "Legacy enterprise system integration", "BI tool connections"],
+    "advantages": ["Language and OS agnostic", "Supported by almost all BI and analytical tools"],
+    "disadvantages": ["Complex driver configuration (DSN)", "Can add latency due to abstraction layer"],
+    "security": "Relies on database-specific driver security (e.g., encrypted connections)",
+    "relatedProtocols": ["JDBC", "SQL"]
+  },
+  "CQL": {
+    "overview": "Cassandra Query Language native binary protocol, used for asynchronous communication with Apache Cassandra clusters.",
+    "transport": "TCP",
+    "communicationStyle": "Asynchronous Request-Response",
+    "useCases": ["Time-series data querying", "High-write throughput operations", "Distributed database access"],
+    "advantages": ["Native asynchronous support (multiplexing on single connection)", "Efficient binary serialization"],
+    "disadvantages": ["Not a full relational SQL language", "Driver complexity for token-aware routing"],
+    "security": "Client-to-node TLS encryption and internal SASL authentication",
+    "relatedProtocols": ["SQL", "Cassandra CQL"]
+  },
+  "Memcached": {
+    "overview": "A simple, text or binary based protocol for setting, getting, and managing key-value pairs in a distributed memory caching system.",
+    "transport": "TCP, UDP",
+    "communicationStyle": "Request-Response",
+    "useCases": ["Database query caching", "Session caching", "Page rendering caching"],
+    "advantages": ["Extremely low latency", "O(1) operation complexity"],
+    "disadvantages": ["Lacks persistence mechanisms", "Very limited data types (strings/bytes only)"],
+    "security": "SASL authentication, typically deployed in isolated private networks",
+    "relatedProtocols": ["Redis (RESP)"]
+  },
+  "Firebase": {
+    "overview": "Realtime database synchronization protocol utilizing WebSockets for long-lived bidirectional state syncing.",
+    "transport": "TCP (WebSockets/HTTP long-polling)",
+    "communicationStyle": "Bidirectional Pub/Sub, Sync",
+    "useCases": ["Real-time chat applications", "Collaborative document editing", "Live game state syncing"],
+    "advantages": ["Automatic state resolution and offline support", "Pushes updates immediately to clients"],
+    "disadvantages": ["Vendor lock-in to Google Cloud", "Complex pricing model based on connections/reads"],
+    "security": "Firebase Security Rules, Google IAM, TLS for transport",
+    "relatedProtocols": ["WebSockets"]
+  },
+  "Elasticsearch (HTTP)": {
+    "overview": "RESTful API over HTTP using JSON payloads for indexing, searching, and managing distributed Lucene-based search clusters.",
+    "transport": "TCP (HTTP)",
+    "communicationStyle": "RESTful Request-Response",
+    "useCases": ["Full-text search engines", "Log analytics (ELK stack)", "Application performance monitoring"],
+    "advantages": ["Easy to interact with via standard HTTP clients", "Highly expressive JSON query DSL"],
+    "disadvantages": ["JSON parsing overhead for massive datasets", "Verbose query syntax"],
+    "security": "Role-based access control, TLS, API keys",
+    "relatedProtocols": ["HTTP"]
+  },
+  "Cassandra CQL": {
+    "overview": "The native binary transport protocol for Apache Cassandra, optimized for asynchronous, pipelined queries across a distributed ring.",
+    "transport": "TCP",
+    "communicationStyle": "Asynchronous Multiplexed",
+    "useCases": ["Wide-column store operations", "IoT sensor data ingestion", "Global-scale user profiles"],
+    "advantages": ["Supports query paging inherently", "Allows multiple concurrent requests on one connection"],
+    "disadvantages": ["Custom serialization required", "Tightly coupled to Cassandra architecture"],
+    "security": "Client-to-node encryption, node-to-node TLS, role-based access control",
+    "relatedProtocols": ["CQL"]
+  },
+  "Neo4j Bolt": {
+    "overview": "A connection-oriented protocol over TCP designed for efficient communication with graph databases, using the PackStream serialization format.",
+    "transport": "TCP, WebSockets",
+    "communicationStyle": "Request-Response, Streaming",
+    "useCases": ["Graph traversals (Cypher queries)", "Fraud detection systems", "Recommendation engines"],
+    "advantages": ["Highly efficient binary serialization (PackStream)", "Connection pooling and routing aware"],
+    "disadvantages": ["Specific to Neo4j graph databases", "More complex to implement than HTTP REST"],
+    "security": "TLS encryption, basic auth, Kerberos integration",
+    "relatedProtocols": ["Gremlin"]
+  },
+  "Gremlin": {
+    "overview": "A graph traversal language and associated protocol (typically over WebSockets) for Apache TinkerPop-enabled graph databases.",
+    "transport": "TCP (WebSockets, HTTP)",
+    "communicationStyle": "Request-Response, Streaming",
+    "useCases": ["Complex network analysis", "Knowledge graph querying", "Property graph traversals"],
+    "advantages": ["Vendor-agnostic across many graph databases", "Turing-complete traversal language"],
+    "disadvantages": ["Steep learning curve", "Performance varies heavily by backend implementation"],
+    "security": "SASL authentication, TLS over WebSockets",
+    "relatedProtocols": ["Neo4j Bolt"]
+  },
+  "DynamoDB API": {
+    "overview": "AWS proprietary REST-like API over HTTP/HTTPS using JSON payloads for accessing the DynamoDB NoSQL database service.",
+    "transport": "TCP (HTTP/HTTPS)",
+    "communicationStyle": "Request-Response",
+    "useCases": ["Serverless application backends", "High-traffic web session stores", "Gaming leaderboards"],
+    "advantages": ["Fully managed and highly available", "Integrates tightly with AWS ecosystem"],
+    "disadvantages": ["AWS vendor lock-in", "1MB limit per query/scan page"],
+    "security": "AWS IAM for fine-grained access control, TLS, KMS for encryption at rest",
+    "relatedProtocols": ["CosmosDB API"]
+  },
+  "CosmosDB API": {
+    "overview": "Multi-model database API over HTTP/HTTPS (supporting SQL, MongoDB, Gremlin, etc.) natively utilizing a custom binary protocol or REST for Azure Cosmos DB.",
+    "transport": "TCP (HTTPS, Custom Binary)",
+    "communicationStyle": "Request-Response",
+    "useCases": ["Globally distributed applications", "Multi-model data storage", "Low-latency real-time apps"],
+    "advantages": ["Supports multiple wire protocols for compatibility", "Direct TCP mode reduces latency significantly"],
+    "disadvantages": ["Azure vendor lock-in", "Direct mode requires specific network configuration"],
+    "security": "Azure RBAC, Resource Tokens, TLS 1.2+",
+    "relatedProtocols": ["DynamoDB API"]
+  },
+  "HDFS": {
+    "overview": "Hadoop Distributed File System protocol, typically involving an RPC mechanism over TCP to coordinate NameNodes and DataNodes.",
+    "transport": "TCP (RPC)",
+    "communicationStyle": "Master-Worker RPC",
+    "useCases": ["Big data batch processing", "Data lake storage", "MapReduce/Spark data sources"],
+    "advantages": ["Highly fault-tolerant via block replication", "Optimized for high-throughput streaming reads"],
+    "disadvantages": ["High latency for small file operations", "Single point of failure (historically) at the NameNode"],
+    "security": "Kerberos authentication, transparent data encryption (TDE)",
+    "relatedProtocols": ["NFS"]
+  },
+  "NFS": {
+    "overview": "Network File System, a distributed file system protocol allowing a user on a client computer to access files over a computer network much like local storage.",
+    "transport": "TCP, UDP (historically)",
+    "communicationStyle": "RPC (Remote Procedure Call)",
+    "useCases": ["Shared centralized home directories", "Enterprise file sharing (Linux/Unix)", "Container persistent volumes"],
+    "advantages": ["Transparent to applications", "Native integration in UNIX-like OSs"],
+    "disadvantages": ["Performance degradation over high-latency WANs", "Stateful nature can complicate failover (NFSv4)"],
+    "security": "Kerberos (NFSv4), RPCSEC_GSS, IP-based restrictions",
+    "relatedProtocols": ["SMB/CIFS"]
+  },
+  "SMB/CIFS": {
+    "overview": "Server Message Block / Common Internet File System, a network file sharing protocol primarily used in Windows environments for shared access to files, printers, and serial ports.",
+    "transport": "TCP (Port 445)",
+    "communicationStyle": "Request-Response, RPC",
+    "useCases": ["Windows corporate file shares", "Active Directory distributed file systems", "Network printer sharing"],
+    "advantages": ["Deeply integrated into Windows OS", "Supports advanced features like oplocks and transparent failover"],
+    "disadvantages": ["Chatty protocol, poor performance on high-latency links", "Historically vulnerable to exploits (e.g., EternalBlue)"],
+    "security": "NTLMv2, Kerberos, SMB Encryption",
+    "relatedProtocols": ["NFS"]
+  },
+  "iSCSI": {
+    "overview": "Internet Small Computer Systems Interface, an IP-based storage networking standard for linking data storage facilities by carrying SCSI commands over IP networks.",
+    "transport": "TCP",
+    "communicationStyle": "Block-level Storage Protocol",
+    "useCases": ["Storage Area Networks (SANs)", "Virtual machine datastores", "Diskless booting"],
+    "advantages": ["Utilizes existing IP Ethernet infrastructure", "Presents as local block storage to the OS"],
+    "disadvantages": ["High overhead compared to local NVMe", "Requires network optimization (Jumbo frames) for best performance"],
+    "security": "CHAP authentication, IPsec for transport encryption",
+    "relatedProtocols": ["NFS"]
+  },
+  "IP": {
+    "overview": "Internet Protocol, the principal communications protocol in the Internet protocol suite for relaying datagrams across network boundaries (routing).",
+    "transport": "Network Layer (L3)",
+    "communicationStyle": "Connectionless Datagrams",
+    "useCases": ["Internet routing", "Local area network addressing", "Packet switching"],
+    "advantages": ["Universal foundation of the internet", "Highly resilient and decentralized design"],
+    "disadvantages": ["Best-effort delivery (no inherent reliability guarantee)", "Vulnerable to spoofing if routers do not implement BCP38"],
+    "security": "IPsec can be applied, otherwise relies on upper layers (TLS)",
+    "relatedProtocols": ["IPv4", "IPv6"]
+  },
+  "IPv4": {
+    "overview": "Internet Protocol version 4, the fourth version of IP and the most widely deployed, utilizing 32-bit addresses.",
+    "transport": "Network Layer (L3)",
+    "communicationStyle": "Connectionless Datagrams",
+    "useCases": ["Legacy internet routing", "Internal corporate networks (RFC 1918)", "NAT-based home networks"],
+    "advantages": ["Universally supported by all networked hardware", "Well-understood and mature management tools"],
+    "disadvantages": ["Address exhaustion (only ~4.3 billion addresses)", "Requires NAT, which breaks end-to-end connectivity principle"],
+    "security": "IPsec supported but rarely native, easily spoofed without network protections",
+    "relatedProtocols": ["IPv6", "IP"]
+  },
+  "IPv6": {
+    "overview": "Internet Protocol version 6, designed to replace IPv4, utilizing 128-bit addresses to solve the address exhaustion problem.",
+    "transport": "Network Layer (L3)",
+    "communicationStyle": "Connectionless Datagrams",
+    "useCases": ["Modern mobile carrier networks", "IoT device addressing", "Next-generation ISP deployments"],
+    "advantages": ["Virtually inexhaustible address space", "Restores end-to-end connectivity", "SLAAC for simplified configuration"],
+    "disadvantages": ["Complex coexistence with IPv4", "Human-unreadable addresses"],
+    "security": "IPsec support is mandated by specification",
+    "relatedProtocols": ["IPv4", "IP"]
+  },
+  "ICMP": {
+    "overview": "Internet Control Message Protocol, used by network devices to send error messages and operational information indicating success or failure of communication.",
+    "transport": "Network Layer (L3)",
+    "communicationStyle": "Control Messages",
+    "useCases": ["Network troubleshooting (ping)", "Path MTU discovery", "Traceroute operations"],
+    "advantages": ["Essential for network diagnostics", "In-band signaling for routing errors"],
+    "disadvantages": ["Can be weaponized for DDoS (Smurf attacks, Ping floods)", "Often blocked by overly aggressive firewalls, breaking PMTUD"],
+    "security": "No inherent encryption, prone to spoofing",
+    "relatedProtocols": ["IP"]
+  },
+  "DNS": {
+    "overview": "Domain Name System, a hierarchical and decentralized naming system used to resolve human-readable domain names to IP addresses.",
+    "transport": "UDP, TCP (Port 53)",
+    "communicationStyle": "Request-Response",
+    "useCases": ["Domain name resolution", "Service discovery (SRV records)", "Email routing (MX records)"],
+    "advantages": ["Highly distributed and resilient caching architecture", "Essential for human interaction with the internet"],
+    "disadvantages": ["Historically unencrypted (vulnerable to eavesdropping/hijacking)", "UDP transport makes it susceptible to amplification attacks"],
+    "security": "DNSSEC for integrity, DNS over HTTPS (DoH) / DNS over TLS (DoT) for privacy",
+    "relatedProtocols": ["IP"]
+  },
+  "BGP": {
+    "overview": "Border Gateway Protocol, the exterior gateway protocol designed to exchange routing and reachability information among autonomous systems (AS) on the Internet.",
+    "transport": "TCP (Port 179)",
+    "communicationStyle": "Stateful Peer-to-Peer",
+    "useCases": ["Internet core routing", "Multi-homed enterprise network routing", "Anycast network deployment"],
+    "advantages": ["Highly scalable to the entire internet routing table", "Extensive policy control via route attributes"],
+    "disadvantages": ["Slow convergence time during topology changes", "Based on implicit trust (vulnerable to route leaks/hijacks)"],
+    "security": "RPKI (Resource Public Key Infrastructure) for route validation, TCP MD5/AO for peer authentication",
+    "relatedProtocols": ["IP"]
+  },
+  "TLS": {
+    "overview": "Transport Layer Security, a cryptographic protocol designed to provide communications security over a computer network.",
+    "transport": "TCP",
+    "communicationStyle": "Handshake followed by Encrypted Stream",
+    "useCases": ["HTTPS web traffic", "Secure email transport", "VPN tunnels"],
+    "advantages": ["Provides confidentiality, integrity, and authentication", "Perfect Forward Secrecy (PFS) in modern versions (TLS 1.3)"],
+    "disadvantages": ["Handshake adds latency (mitigated in TLS 1.3)", "Certificate management complexity"],
+    "security": "Uses asymmetric cryptography for key exchange and symmetric for payload",
+    "relatedProtocols": ["SSL"]
+  },
+  "SSL": {
+    "overview": "Secure Sockets Layer, the deprecated predecessor to TLS, designed to secure transport layer connections.",
+    "transport": "TCP",
+    "communicationStyle": "Encrypted Stream",
+    "useCases": ["Legacy system encryption", "Historical web security", "Older mail server connections"],
+    "advantages": ["Pioneered standardized internet encryption", "Supported by very old legacy hardware"],
+    "disadvantages": ["Cryptographically broken (POODLE, DROWN attacks)", "Completely deprecated by IETF"],
+    "security": "Considered insecure; disabled in modern browsers and OSs",
+    "relatedProtocols": ["TLS"]
+  },
+  "IPsec": {
+    "overview": "Internet Protocol Security, a secure network protocol suite that authenticates and encrypts the packets of data to provide secure encrypted communication between two computers over an IP network.",
+    "transport": "Network Layer (L3)",
+    "communicationStyle": "Encrypted Tunnels / Transport",
+    "useCases": ["Site-to-Site VPNs", "Client-to-Site remote access", "Securing BGP peering"],
+    "advantages": ["Operates transparently at the network layer", "Highly robust standard supported by most enterprise firewalls"],
+    "disadvantages": ["Notoriously complex to configure", "Can be blocked by NAT/Firewalls if ESP is dropped"],
+    "security": "Provides AH (Authentication Header) and ESP (Encapsulating Security Payload)",
+    "relatedProtocols": ["IKEv2", "WireGuard"]
+  },
+  "MAC": {
+    "overview": "Media Access Control, the lower sublayer of the Data Link Layer (Layer 2) responsible for hardware addressing and access control mechanisms on physical network media.",
+    "transport": "Data Link Layer (L2)",
+    "communicationStyle": "Frame Broadcast / Unicast",
+    "useCases": ["Ethernet frame switching", "Wi-Fi local addressing", "ARP resolution target"],
+    "advantages": ["Enables local network communication without routing", "Hardware-burned addresses provide simple identification"],
+    "disadvantages": ["Not routable across different networks", "Easily spoofed in software"],
+    "security": "Vulnerable to MAC flooding and spoofing; mitigated by switch port security (802.1X)",
+    "relatedProtocols": ["ARP", "VLAN"]
+  },
+  "ARP": {
+    "overview": "Address Resolution Protocol, used for discovering the link layer address (MAC) associated with a given internet layer address (IPv4).",
+    "transport": "Data Link Layer (L2)",
+    "communicationStyle": "Broadcast Request, Unicast Reply",
+    "useCases": ["IPv4 to MAC resolution", "Duplicate Address Detection", "Local network host discovery"],
+    "advantages": ["Essential mechanism for IPv4 local delivery", "Simple and lightweight"],
+    "disadvantages": ["Stateless and unauthenticated", "Relies entirely on broadcast domains"],
+    "security": "Highly vulnerable to ARP spoofing/poisoning and Man-in-the-Middle attacks",
+    "relatedProtocols": ["MAC", "IPv4"]
+  },
+  "DHCP": {
+    "overview": "Dynamic Host Configuration Protocol, a network management protocol used to dynamically assign an IP address and other network configuration parameters to devices.",
+    "transport": "UDP (Ports 67, 68)",
+    "communicationStyle": "Broadcast Discovery, Lease Management",
+    "useCases": ["Automated IP provisioning for clients", "PXE network booting configuration", "Centralized DNS/Gateway assignment"],
+    "advantages": ["Eliminates manual IP configuration overhead", "Efficient recycling of IP addresses via leases"],
+    "disadvantages": ["Relies on broadcasts, requiring relay agents across subnets", "Unauthenticated by default"],
+    "security": "Vulnerable to Rogue DHCP servers and DHCP starvation",
+    "relatedProtocols": ["IP", "DNS"]
+  },
+  "SNMP": {
+    "overview": "Simple Network Management Protocol, an Internet Standard protocol for collecting, organizing, and modifying information about managed devices on IP networks.",
+    "transport": "UDP (Ports 161, 162)",
+    "communicationStyle": "Polling (GET/SET) and Asynchronous Traps",
+    "useCases": ["Network infrastructure monitoring", "Bandwidth utilization graphing", "Hardware fault alerting"],
+    "advantages": ["Universally supported by networking equipment", "Standardized MIBs (Management Information Bases)"],
+    "disadvantages": ["SNMPv1/v2c send community strings in plaintext", "Complex ASN.1/BER encoding scheme"],
+    "security": "SNMPv3 provides strong authentication and encryption (USM/VACM)",
+    "relatedProtocols": ["UDP"]
+  },
+  "VLAN": {
+    "overview": "Virtual Local Area Network (IEEE 802.1Q), a layer 2 protocol used to partition and isolate broadcast domains on a computer network at the data link layer.",
+    "transport": "Data Link Layer (L2)",
+    "communicationStyle": "Frame Tagging",
+    "useCases": ["Network segmentation", "Reducing broadcast domain size", "Multi-tenant switch isolation"],
+    "advantages": ["Cost-effective network isolation", "Simplifies network design and security policy enforcement"],
+    "disadvantages": ["Limited to 4094 VLANs per domain", "Spanning Tree Protocol (STP) complexities"],
+    "security": "Vulnerable to VLAN hopping if native VLANs are misconfigured",
+    "relatedProtocols": ["VXLAN", "MAC"]
+  },
+  "VXLAN": {
+    "overview": "Virtual Extensible LAN, a network virtualization technology that attempts to address scalability problems associated with large cloud computing deployments by encapsulating MAC-based L2 frames within L3 UDP packets.",
+    "transport": "UDP (over IP)",
+    "communicationStyle": "MAC-in-UDP Encapsulation",
+    "useCases": ["Data center network virtualization", "Stretching L2 domains across L3 boundaries", "Multi-tenant cloud networks"],
+    "advantages": ["Overcomes 4K VLAN limit (supports ~16 million VNIs)", "Leverages ECMP in L3 networks for better bandwidth utilization"],
+    "disadvantages": ["Encapsulation overhead adds to MTU requirements", "Requires complex control planes (like BGP EVPN)"],
+    "security": "No inherent encryption; relies on underlying transport security like IPsec",
+    "relatedProtocols": ["VLAN"]
+  },
+  "WireGuard": {
+    "overview": "A modern, high-performance VPN protocol utilizing state-of-the-art cryptography, designed to be simpler and faster than IPsec and OpenVPN.",
+    "transport": "UDP",
+    "communicationStyle": "Connectionless Encrypted Tunnels",
+    "useCases": ["Mobile device VPNs", "Site-to-site secure links", "Cloud infrastructure meshes"],
+    "advantages": ["Extremely small codebase (~4000 lines) for easy auditing", "In-kernel implementation provides exceptional throughput and low latency"],
+    "disadvantages": ["Uses UDP only, which can be blocked by restrictive firewalls", "Lacks native dynamic IP assignment mechanisms natively"],
+    "security": "Uses modern primitives (Curve25519, ChaCha20, Poly1305)",
+    "relatedProtocols": ["IPsec", "OpenVPN"]
+  },
+  "OpenVPN": {
+    "overview": "A widely used, open-source virtual private network protocol and software that uses custom security protocols utilizing SSL/TLS for key exchange.",
+    "transport": "TCP, UDP",
+    "communicationStyle": "SSL/TLS based Tunnels",
+    "useCases": ["Enterprise remote access", "Bypassing geographic network censorship", "Consumer VPN services"],
+    "advantages": ["Highly configurable and flexible", "Can operate over TCP 443 to bypass strict firewalls"],
+    "disadvantages": ["Heavyweight userspace implementation impacts performance", "Complex configuration and certificate management"],
+    "security": "Robust security utilizing OpenSSL libraries; supports custom cipher suites",
+    "relatedProtocols": ["WireGuard", "IPsec"]
+  },
+  "IKEv2": {
+    "overview": "Internet Key Exchange version 2, the protocol used to set up a security association (SA) in the IPsec protocol suite.",
+    "transport": "UDP (Ports 500, 4500)",
+    "communicationStyle": "Key Exchange and Negotiation",
+    "useCases": ["Mobile VPN clients (native OS support)", "Establishing IPsec site-to-site tunnels", "Secure enterprise mobility"],
+    "advantages": ["Native support in iOS, Android, macOS, Windows", "MOBIKE extension allows seamless network transitions"],
+    "disadvantages": ["Can be difficult to troubleshoot SA mismatches", "Often blocked by restrictive NATs/Firewalls"],
+    "security": "Strong asymmetric authentication (RSA/ECDSA or EAP) to bootstrap IPsec",
+    "relatedProtocols": ["IPsec"]
+  },
+  "L2TP": {
+    "overview": "Layer 2 Tunneling Protocol, used to support virtual private networks or as part of the delivery of services by ISPs; it does not provide encryption by itself.",
+    "transport": "UDP (Port 1701)",
+    "communicationStyle": "PPP Frame Encapsulation",
+    "useCases": ["ISP subscriber termination", "Legacy VPN implementations (L2TP/IPsec)", "Bridging remote L2 networks"],
+    "advantages": ["Native support in many legacy systems", "Can transport non-IP protocols by tunneling PPP"],
+    "disadvantages": ["No native confidentiality; requires IPsec for security", "Performance overhead due to double encapsulation"],
+    "security": "Insecure on its own; always paired with IPsec in enterprise environments",
+    "relatedProtocols": ["PPTP", "IPsec"]
+  },
+  "PPTP": {
+    "overview": "Point-to-Point Tunneling Protocol, an obsolete method for implementing virtual private networks natively supported by older Windows versions.",
+    "transport": "TCP (Control), GRE (Data)",
+    "communicationStyle": "Control Channel + Encapsulated GRE Data",
+    "useCases": ["Legacy Windows VPNs", "Extremely low-security tunneling needs", "Historical remote access"],
+    "advantages": ["Built into almost every OS natively", "Low CPU overhead due to weak encryption"],
+    "disadvantages": ["Fundamentally compromised security", "GRE protocol 47 is often blocked by NAT routers"],
+    "security": "Considered completely insecure; vulnerable to offline dictionary attacks",
+    "relatedProtocols": ["L2TP"]
+  },
+  "FTP": {
+    "overview": "File Transfer Protocol, a standard network protocol used for the transfer of computer files between a client and server on a computer network.",
+    "transport": "TCP (Ports 20, 21)",
+    "communicationStyle": "Dual-Channel (Control and Data)",
+    "useCases": ["Legacy file hosting", "Anonymous software distribution archives", "Internal network file drops"],
+    "advantages": ["Ubiquitous client support", "Optimized strictly for bulk file transfer"],
+    "disadvantages": ["Transmits credentials and data in cleartext", "Active/Passive modes cause NAT and firewall traversal issues"],
+    "security": "No inherent security; replaced by SFTP and FTPS",
+    "relatedProtocols": ["SFTP", "FTPS"]
+  },
+  "SFTP": {
+    "overview": "SSH File Transfer Protocol, a network protocol that provides file access, file transfer, and file management over any reliable data stream (typically SSH).",
+    "transport": "TCP (Port 22 via SSH)",
+    "communicationStyle": "Encrypted RPC (over SSH)",
+    "useCases": ["Secure server administration", "Automated secure B2B file transfers", "Web hosting file management"],
+    "advantages": ["Uses a single port (22), making firewall configuration trivial", "Inherits robust SSH security and authentication"],
+    "disadvantages": ["Can be slower than pure FTP due to SSH encryption overhead", "Less native support in older Windows environments"],
+    "security": "Highly secure, utilizing SSH cryptographic primitives",
+    "relatedProtocols": ["FTP", "SSH"]
+  },
+  "FTPS": {
+    "overview": "FTP over SSL/TLS, an extension to the commonly used File Transfer Protocol that adds support for the Transport Layer Security (TLS) and the Secure Sockets Layer (SSL) cryptographic protocols.",
+    "transport": "TCP (Ports 21, 990)",
+    "communicationStyle": "Dual-Channel with TLS",
+    "useCases": ["Secure legacy FTP deployments", "Mainframe secure file transfers", "Enterprise B2B data exchange"],
+    "advantages": ["Maintains FTP command structure while securing transit", "Supports X.509 certificate authentication"],
+    "disadvantages": ["Inherits FTP's firewall and NAT issues", "More complex to setup than SFTP"],
+    "security": "Strong transport encryption via TLS",
+    "relatedProtocols": ["FTP", "SFTP"]
+  },
+  "SMTP": {
+    "overview": "Simple Mail Transfer Protocol, the internet standard communication protocol for electronic mail transmission.",
+    "transport": "TCP (Ports 25, 465, 587)",
+    "communicationStyle": "Store-and-Forward / Push",
+    "useCases": ["Email routing between MTAs", "Client email submission", "Automated application email alerts"],
+    "advantages": ["Universal standard for global email interoperability", "Highly reliable store-and-forward architecture"],
+    "disadvantages": ["Lacks native sender authentication", "Chatty, text-based protocol"],
+    "security": "Secured via STARTTLS; spoofing mitigated via SPF, DKIM, and DMARC",
+    "relatedProtocols": ["POP3", "IMAP"]
+  },
+  "POP3": {
+    "overview": "Post Office Protocol version 3, an application-layer internet standard protocol used by e-mail clients to retrieve e-mail from a mail server.",
+    "transport": "TCP (Ports 110, 995)",
+    "communicationStyle": "Download-and-Delete",
+    "useCases": ["Offline email reading", "Legacy low-storage mail servers", "Single-device email access"],
+    "advantages": ["Simple implementation", "Minimizes server storage requirements"],
+    "disadvantages": ["Poor experience across multiple devices", "Lacks server-side folder synchronization"],
+    "security": "Secured via TLS (POP3S on port 995)",
+    "relatedProtocols": ["IMAP", "SMTP"]
+  },
+  "IMAP": {
+    "overview": "Internet Message Access Protocol, an Internet standard protocol used by email clients to retrieve and manage email messages from a mail server over a TCP/IP connection.",
+    "transport": "TCP (Ports 143, 993)",
+    "communicationStyle": "Stateful Sync / RPC",
+    "useCases": ["Multi-device email synchronization", "Server-side email search", "Enterprise email management"],
+    "advantages": ["Perfect for multi-device sync (phones, laptops)", "Allows partial downloads (headers only) for fast UI loading"],
+    "disadvantages": ["Requires significantly more server storage than POP3", "Complex protocol synchronization states"],
+    "security": "Secured via TLS (IMAPS on port 993)",
+    "relatedProtocols": ["POP3", "SMTP"]
+  },
+  "SSH": {
+    "overview": "Secure Shell, a cryptographic network protocol for operating network services securely over an unsecured network, most notably remote command-line login.",
+    "transport": "TCP (Port 22)",
+    "communicationStyle": "Multiplexed Encrypted Stream",
+    "useCases": ["Remote Linux/Unix server administration", "Secure port forwarding (tunnels)", "Automated deployment scripts"],
+    "advantages": ["Ubiquitous secure remote access", "Supports strong public-key authentication and local/remote port forwarding"],
+    "disadvantages": ["Key management at scale requires infrastructure", "Vulnerable to brute-force if password auth is left enabled"],
+    "security": "Highly secure, utilizing asymmetric keys for auth and symmetric ciphers for transport",
+    "relatedProtocols": ["Telnet", "SFTP"]
+  },
+  "Telnet": {
+    "overview": "Teletype Network, an application protocol used on the Internet or local area network to provide a bidirectional interactive text-oriented communication facility using a virtual terminal connection.",
+    "transport": "TCP (Port 23)",
+    "communicationStyle": "Unencrypted Bidirectional Stream",
+    "useCases": ["Legacy embedded device management", "Debugging TCP services manually", "BBS (Bulletin Board Systems)"],
+    "advantages": ["Extremely simple and universally available client", "Low overhead"],
+    "disadvantages": ["Transmits everything, including passwords, in absolute cleartext", "Completely lacks server authentication"],
+    "security": "Zero inherent security; wholly deprecated in favor of SSH",
+    "relatedProtocols": ["SSH"]
+  },
+  "LDAP": {
+    "overview": "Lightweight Directory Access Protocol, an open, vendor-neutral, industry standard application protocol for accessing and maintaining distributed directory information services.",
+    "transport": "TCP, UDP (Ports 389, 636)",
+    "communicationStyle": "Request-Response Search/Bind",
+    "useCases": ["Corporate identity and access management", "Centralized address books", "Single Sign-On (SSO) backend auth"],
+    "advantages": ["Hierarchical, fast read-optimized database structure", "Industry standard for enterprise authentication integration"],
+    "disadvantages": ["Complex query syntax and schema management", "Historically unencrypted by default"],
+    "security": "Secured via LDAPS (Port 636) or STARTTLS; supports SASL authentication",
+    "relatedProtocols": ["Internal"]
+  },
+  "Internal": {
+    "overview": "A generic classification for proprietary or unexposed intra-system communication protocols used exclusively within a secure backend boundary.",
+    "transport": "Varies (TCP, UDP, Unix Domain Sockets)",
+    "communicationStyle": "Varies",
+    "useCases": ["Microservice-to-microservice communication", "Database backend replication", "Internal metrics scraping"],
+    "advantages": ["Can bypass standard authentication layers for performance", "Tailored exactly to system needs without standard compliance overhead"],
+    "disadvantages": ["Lacks interoperability with third-party tools", "Security often relies solely on network perimeter (Zero Trust violation)"],
+    "security": "Often unencrypted (assuming network safety) or secured via mutual TLS (mTLS)",
+    "relatedProtocols": ["IPC"]
+  },
+  "IPC": {
+    "overview": "Inter-Process Communication, mechanisms provided by an operating system for processes to manage shared data and communicate with each other.",
+    "transport": "OS Kernels, Shared Memory, Unix Domain Sockets",
+    "communicationStyle": "Pipes, Message Queues, Shared Memory",
+    "useCases": ["Communication between a web server and application server on the same host", "Browser architecture (main process to renderer)", "Local high-performance database clients"],
+    "advantages": ["Bypasses the network stack entirely, offering microsecond latency", "High throughput via shared memory"],
+    "disadvantages": ["Strictly limited to a single physical or virtual machine", "Implementation varies wildly between operating systems"],
+    "security": "Secured by OS-level file permissions and process isolation boundaries",
+    "relatedProtocols": ["Internal"]
+  },
+  "gopher": {
+    "overview": "An early Internet distributed document search and retrieval protocol, designed to distribute, search, and retrieve documents in a highly structured, menu-driven manner.",
+    "transport": "TCP (Port 70)",
+    "communicationStyle": "Request-Response (Menu Traversal)",
+    "useCases": ["Retro-computing internet access", "Text-only information dissemination", "Pre-WWW document linking"],
+    "advantages": ["Extremely lightweight and simple text parsing", "Strict hierarchical structure organizes data cleanly"],
+    "disadvantages": ["Lacked rich media and hyperlinking flexibility of HTML/HTTP", "Completely superseded by the World Wide Web"],
+    "security": "No native encryption or authentication mechanisms",
+    "relatedProtocols": ["HTTP", "FTP"]
+  },
+  "BitTorrent": {
+    "overview": "A decentralized, peer-to-peer communication protocol for distributing data and electronic files over the Internet in a highly efficient manner.",
+    "transport": "TCP, UDP (uTP)",
+    "communicationStyle": "Peer-to-Peer Swarm",
+    "useCases": ["Large open-source OS image distribution", "Decentralized file sharing", "Game patching systems"],
+    "advantages": ["Downloads get faster as more peers join (scalable)", "Highly resilient to single server failures"],
+    "disadvantages": ["Suffers from the free-rider problem without private trackers", "Often blocked by ISPs due to association with piracy"],
+    "security": "Protocol Encryption (PE/MSE) obfuscates traffic, but IP addresses are public in the swarm",
+    "relatedProtocols": ["IPFS"]
+  },
+  "IPFS": {
+    "overview": "InterPlanetary File System, a peer-to-peer hypermedia protocol designed to preserve and grow humanity's knowledge by making the web upgradeable, resilient, and more open via content addressing.",
+    "transport": "TCP, UDP (QUIC, WebSockets)",
+    "communicationStyle": "Peer-to-Peer, Content Addressed",
+    "useCases": ["Decentralized web hosting (Web3/DApps)", "NFT metadata storage", "Censorship-resistant publication"],
+    "advantages": ["Files are addressed by cryptographic hash, ensuring immutability", "Decentralized caching reduces bandwidth costs"],
+    "disadvantages": ["Files can disappear if no node pins (hosts) them", "High resource usage for running a full node compared to HTTP clients"],
+    "security": "Inherent data integrity via hashing; transport secured via libp2p secure channels",
+    "relatedProtocols": ["BitTorrent"]
+  },
+  "ActivityPub": {
+    "overview": "A decentralized social networking protocol based on the ActivityStreams 2.0 data format, providing a federated server-to-server API for delivering notifications and content.",
+    "transport": "TCP (HTTP/HTTPS)",
+    "communicationStyle": "Federated REST / Webhooks",
+    "useCases": ["Fediverse platforms (Mastodon, Lemmy)", "Decentralized microblogging", "Cross-platform social media interaction"],
+    "advantages": ["Enables interoperability between completely different social platforms", "Prevents single-entity control over social graphs"],
+    "disadvantages": ["Complex moderation and anti-abuse across instances", "High server costs for federating massive instances"],
+    "security": "Relies on HTTPS, HTTP Signatures, and JSON-LD for request authentication between instances",
+    "relatedProtocols": ["Matrix"]
+  },
+  "Matrix": {
+    "overview": "An open standard for interoperable, decentralized, real-time communication over IP, utilizing JSON over REST to synchronize state across a federation of servers.",
+    "transport": "TCP (HTTP/HTTPS)",
+    "communicationStyle": "Federated Pub/Sub / State Sync",
+    "useCases": ["Decentralized enterprise team chat", "Secure instant messaging", "IoT device state synchronization"],
+    "advantages": ["No central point of control", "Bridges allow connection to legacy networks (Slack, Discord, IRC)"],
+    "disadvantages": ["Heavy server resource consumption (Synapse) for large rooms", "Complex cryptographic key management for end users"],
+    "security": "End-to-End Encryption (E2EE) built-in using the Olm/Megolm cryptographic ratchets",
+    "relatedProtocols": ["ActivityPub"]
+  },
+  "SIP": {
+    "overview": "Session Initiation Protocol, a signaling protocol used for initiating, maintaining, and terminating real-time sessions that include voice, video and messaging applications.",
+    "transport": "UDP, TCP, TLS (Port 5060, 5061)",
+    "communicationStyle": "Signaling and Negotiation",
+    "useCases": ["VoIP call setup", "Video conferencing establishment", "Instant messaging presence"],
+    "advantages": ["Extensible, text-based (HTTP-like) protocol", "Industry standard for telecommunications over IP"],
+    "disadvantages": ["Notoriously difficult to traverse NATs without STUN/TURN/ICE", "Only handles signaling, requires RTP for actual media transport"],
+    "security": "SIPS (SIP over TLS) for signaling encryption; vulnerable to toll fraud if improperly configured",
+    "relatedProtocols": ["VoIP"]
+  },
+  "VoIP": {
+    "overview": "Voice over Internet Protocol, a broader methodology and group of technologies for the delivery of voice communications and multimedia sessions over Internet Protocol networks.",
+    "transport": "UDP (primarily via RTP)",
+    "communicationStyle": "Real-time Streaming",
+    "useCases": ["Enterprise PBX systems", "Consumer internet calling", "Customer support call centers"],
+    "advantages": ["Drastically reduces telecommunication costs compared to PSTN", "Integrates voice directly into digital workflows"],
+    "disadvantages": ["Highly sensitive to network jitter, latency, and packet loss", "Requires QoS (Quality of Service) configurations on enterprise networks"],
+    "security": "SRTP (Secure Real-time Transport Protocol) for encrypting media streams",
+    "relatedProtocols": ["SIP"]
+  }
+}

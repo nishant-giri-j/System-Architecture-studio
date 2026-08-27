@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm 11 requires explicit opt-in for dependency lifecycle scripts.
+allowBuilds:
+  '@apollo/protobufjs': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  prisma: true
+  unrs-resolver: true

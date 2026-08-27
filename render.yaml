@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: architecture-studio-api
+    runtime: node
+    rootDir: .
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @architecture-studio/api build
+    startCommand: pnpm --filter @architecture-studio/api start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.16.0
+      - key: CORS_ORIGIN
+        sync: false

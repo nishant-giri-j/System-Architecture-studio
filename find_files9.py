@@ -1,0 +1,24 @@
+import json
+
+transcript_path = r"C:\Users\nisha\.gemini\antigravity\brain\b6d695e8-6cb8-4902-b981-c0b557ea46a3\.system_generated\logs\transcript_full.jsonl"
+full_content = ""
+
+with open(transcript_path, 'r', encoding='utf-8') as f:
+    for line in f:
+        try:
+            data = json.loads(line)
+            if data.get('type') == 'PLANNER_RESPONSE':
+                for tc in data.get('tool_calls', []):
+                    if tc.get('name') == 'run_command':
+                        cmd = tc.get('args', {}).get('CommandLine', '')
+                        if 'JSON:API' in cmd and 'protocolGroups' in cmd:
+                            full_content += "\n=== COMMAND ===\n" + cmd
+                    elif tc.get('name') == 'replace_file_content':
+                        cmd = tc.get('args', {}).get('ReplacementContent', '')
+                        if 'JSON:API' in cmd and 'protocolGroups' in cmd:
+                            full_content += "\n=== REPLACE ===\n" + cmd
+        except Exception as e:
+            pass
+
+with open('find_openapi.txt', 'w', encoding='utf-8') as f:
+    f.write(full_content)

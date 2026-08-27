@@ -1,0 +1,33 @@
+$pyScript = @'
+import json
+
+transcript_path = r"C:\Users\nisha\.gemini\antigravity\brain\b6d695e8-6cb8-4902-b981-c0b557ea46a3\.system_generated\logs\transcript_full.jsonl"
+technology_content = None
+edge_properties_content = None
+
+with open(transcript_path, 'r', encoding='utf-8') as f:
+    for line in f:
+        try:
+            data = json.loads(line)
+            if data.get('type') == 'GENERIC' and 'replace_file_content' in data.get('content', ''):
+                # Since replace_file_content shows diffs, maybe we can look for run_command setting the full file instead.
+                pass
+            if data.get('type') == 'PLANNER_RESPONSE':
+                for tc in data.get('tool_calls', []):
+                    if tc.get('name') == 'run_command':
+                        cmd = tc.get('args', {}).get('CommandLine', '')
+                        if 'Set-Content' in cmd and 'technology.ts' in cmd:
+                            technology_content = cmd
+                        if 'Set-Content' in cmd and 'edge-properties.tsx' in cmd:
+                            edge_properties_content = cmd
+        except:
+            pass
+
+with open('tech_restore.txt', 'w', encoding='utf-8') as f:
+    f.write(str(technology_content))
+with open('edge_restore.txt', 'w', encoding='utf-8') as f:
+    f.write(str(edge_properties_content))
+print("Done parsing transcript for Set-Content commands")
+'@
+Set-Content find_files.py -Value $pyScript
+python find_files.py

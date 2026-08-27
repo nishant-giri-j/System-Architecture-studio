@@ -1,0 +1,20 @@
+import json
+
+transcript_path = r"C:\Users\nisha\.gemini\antigravity\brain\b6d695e8-6cb8-4902-b981-c0b557ea46a3\.system_generated\logs\transcript_full.jsonl"
+latest_cmd = None
+
+with open(transcript_path, 'r', encoding='utf-8') as f:
+    for line in f:
+        try:
+            data = json.loads(line)
+            if data.get('type') == 'PLANNER_RESPONSE':
+                for tc in data.get('tool_calls', []):
+                    if tc.get('name') == 'run_command':
+                        cmd = tc.get('args', {}).get('CommandLine', '')
+                        if 'MariaDB' in cmd and 'VR/AR' in cmd and 'Set-Content' in cmd:
+                            latest_cmd = cmd
+        except:
+            pass
+
+with open('tech_cmd.txt', 'w', encoding='utf-8') as f:
+    f.write(str(latest_cmd))
