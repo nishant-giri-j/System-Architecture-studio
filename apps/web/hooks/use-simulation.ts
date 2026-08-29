@@ -60,6 +60,7 @@ export interface SimulationMetrics {
     inFlightRequests: number;
     droppedRequests: number;
     throughputPerSecond: number;
+    statusCodes: Record<number, number>;
 }
 
 export type RequestLifecycle =
@@ -107,6 +108,9 @@ export function useSimulation(
     playbackSpeed: number = 1,
     requestsPerSecond: number = 0.83,
     maxInFlightRequests: number = 8,
+    totalLimit?: number,
+    onWarning?: (warning: any) => void,
+    onAutoPause?: () => void
 ) {
     const [edgePulses, setEdgePulses] = useState<
         Record<string, InternalPulse[]>
@@ -125,6 +129,7 @@ export function useSimulation(
         inFlightRequests: 0,
         droppedRequests: 0,
         throughputPerSecond: 0,
+        statusCodes: {},
     });
 
     const requestLatencies = useRef<Record<string, RequestLatency>>({});
@@ -133,12 +138,27 @@ export function useSimulation(
     const logSequence = useRef(0);
     const eventSequence = useRef(0);
     const eventQueue = useRef<ScheduledSimulationEvent[]>([]);
-    const branchJoins = useRef<Record<string, BranchJoinState>>({});
+    const branchJoins = useRef<Record<string, BranchJoinState[]>>({});
     const requestSequence = useRef(0);
     const completedAt = useRef<number[]>([]);
     const [bottleneckNodes, setBottleneckNodes] = useState<Set<string>>(
         new Set(),
     );
+    const [nodeQueues, setNodeQueues] = useState<Record<string, { pulse: InternalPulse }[]>>({});
+    const [frozenNodes, setFrozenNodes] = useState<Set<string>>(new Set());
+    const [offlineNodes, setOfflineNodes] = useState<Set<string>>(new Set());
+    
+    interface QueueTask {
+        pulse: InternalPulse;
+        execute: () => void;
+        delay: number;
+    }
+    const nodeQueuesRef = useRef<Record<string, QueueTask[]>>({});
+    const nodeProcessingCount = useRef<Record<string, number>>({});
+    const frozenNodesRef = useRef<Set<string>>(new Set());
+    const offlineNodesRef = useRef<Set<string>>(new Set());
+    const warnedNodesRef = useRef<Set<string>>(new Set());
+    const cacheState = useRef<Record<string, Set<number>>>({});
 
     const addLog = useCallback(
         (
@@ -171,7 +191,7 @@ export function useSimulation(
     const techsRef = useRef(technologies);
     const isPlayingRef = useRef(isPlaying);
     const isPausedRef = useRef(isPaused);
-    const inFlightLb = useRef<Record<string, string>>({});
+    const inFlightLb = useRef<Record<string, string[]>>({});
 
     useEffect(() => {
         nodesRef.current = nodes;
@@ -389,6 +409,7 @@ export function useSimulation(
                     type: PulseType,
                     color: string,
                     specificCaller?: string,
+                    statusCode?: number,
                 ) => {
                     const targetCaller = specificCaller || pulse.callerId;
                     if (!targetCaller) return;
@@ -401,6 +422,14 @@ export function useSimulation(
                                 e.source === targetCaller),
                     );
                     if (!edge) return;
+
+                    const callerNode = nodesRef.current.find((n) => n.id === targetCaller);
+                    if (callerNode) {
+                        const icon = (statusCode && statusCode >= 400) ? '❌ ERR' : '📥 RES';
+                        const codeStr = statusCode ? ` (${statusCode})` : '';
+                        const logType = type === 'cache-miss' ? 'error' : (type === 'cache-save' ? 'system' : type);
+                        trace(`[${tech.label}] ${icon} \u2192 [${callerNode.data.label}]${codeStr}`, color, logType as any);
+                    }
 
                     emitPulse({
                         id: crypto.randomUUID(),
@@ -419,7 +448,16 @@ export function useSimulation(
                     edge: EventFlowEdge,
                     type: PulseType,
                     color: string,
+                    protocol?: string,
                 ) => {
+                    const targetNode = nodesRef.current.find(n => n.id === edge.target);
+                    const pcol = protocol || edge.data?.protocol || 'HTTP';
+                    if (targetNode) {
+                        const icon = type === 'request' ? '📤 REQ' : '📤 RES';
+                        const logType = type === 'cache-miss' ? 'error' : (type === 'cache-save' ? 'system' : type);
+                        trace(`[${tech.label}] ${icon} \u2192 [${targetNode.data.label}] via ${pcol}`, color, logType as any);
+                    }
+
                     emitPulse({
                         id: crypto.randomUUID(),
                         edgeId: edge.id,
@@ -452,15 +490,10 @@ export function useSimulation(
                             const targetNode = nodesRef.current.find(
                                 (n) => n.id === step.targetNodeId,
                             );
-                            trace(
-                                `[${node.data.label}] Forwarding to ${targetNode?.data.label || 'Unknown'}`,
-                                '#ff4fa3',
-                                'forward',
-                            );
                             if (pulse.type === 'request') {
-                                inFlightLb.current[
-                                    `${arrivedAtId}_${pulse.requestId}`
-                                ] = pulse.callerId || '';
+                                const lbKey = `${arrivedAtId}_${pulse.requestId}`;
+                                if (!inFlightLb.current[lbKey]) inFlightLb.current[lbKey] = [];
+                                if (pulse.callerId) inFlightLb.current[lbKey].push(pulse.callerId);
                             }
                             const targetEdge = outgoingEdges.find(
                                 (e) => e.target === step.targetNodeId,
@@ -469,11 +502,6 @@ export function useSimulation(
                                 forward(targetEdge, 'request', '#ff4fa3');
                             }
                         } else if (step.action === 'reply') {
-                            trace(
-                                `[${node.data.label}] Returning: ''`,
-                                '#9cf57a',
-                                'response',
-                            );
                             reply('response', '#9cf57a');
                         } else if (step.action === 'simulate-cache') {
                             trace(
@@ -667,48 +695,92 @@ export function useSimulation(
                             '#ffde59',
                             'processing',
                         );
+                        const lbKey = `${node.id}_${pulse.requestId}`;
                         if (pulse.callerId) {
-                            inFlightLb.current[
-                                `${arrivedAtId}_${pulse.requestId}`
-                            ] = pulse.callerId;
+                            if (!inFlightLb.current[lbKey]) inFlightLb.current[lbKey] = [];
+                            // Detect deadlocks if the caller is already in the queue for this request
+                            if (inFlightLb.current[lbKey].includes(pulse.callerId)) {
+                                if (!warnedNodesRef.current.has(`${pulse.requestId}-deadlock`)) {
+                                    warnedNodesRef.current.add(`${pulse.requestId}-deadlock`);
+                                    if (onWarning) onWarning({ id: crypto.randomUUID(), type: 'deadlock', message: `Deadlock Detected: Infinite routing loop involving ${node.data.label}! Packet dropped.`, timestamp: new Date(), nodeId: node.id });
+                                }
+                                return; 
+                            }
+                            inFlightLb.current[lbKey].push(pulse.callerId);
                         }
-                        if (outgoingEdges.length > 0) {
-                            if (outgoingEdges.length > 1) {
-                                branchJoins.current[
-                                    `${arrivedAtId}:${pulse.requestId}`
-                                ] = {
-                                    expected: outgoingEdges.length,
+
+                        const hasLogic = node.data.logicSteps && node.data.logicSteps.length > 0;
+                        const logicSteps = node.data.logicSteps || [];
+
+                        if (!hasLogic) {
+                            if (!warnedNodesRef.current.has(node.id)) {
+                                warnedNodesRef.current.add(node.id);
+                                if (onWarning) {
+                                    onWarning({ id: crypto.randomUUID(), type: 'unprogrammed', message: `Missing Logic: ${node.data.label} dropped a packet because it hasn't been programmed in the Logic Panel yet.`, timestamp: new Date(), nodeId: node.id });
+                                }
+                            }
+                            trace(`[${tech.label}] ❌ DROP (No Logic)`, '#ff6b6b', 'error');
+                            return;
+                        }
+
+                        trace(`[${tech.label}] ⚙️ PROC Request (~${modeledLatency}ms)`, '#ffde59', 'processing', modeledLatency);
+
+                        const executeSteps = (conditions: Set<string>) => {
+                            const stepsToRun = logicSteps.filter(
+                                (s: any) => conditions.has(s.condition),
+                            );
+                            let forwardSteps = stepsToRun.filter(
+                                (s: any) => s.action === 'forward' && s.targetNodeId,
+                            );
+                            
+                            const brokenForwards = forwardSteps.filter((s: any) => !outgoingEdges.some(e => e.target === s.targetNodeId));
+                            if (brokenForwards.length > 0) {
+                                if (!warnedNodesRef.current.has(`${node.id}-broken-wire`)) {
+                                    warnedNodesRef.current.add(`${node.id}-broken-wire`);
+                                    if (onWarning) onWarning({ id: crypto.randomUUID(), type: 'unprogrammed', message: `Broken Routing: ${node.data.label} has a logic step pointing to a node with no wire. Packet dropped.`, timestamp: new Date(), nodeId: node.id });
+                                }
+                                trace(`[${tech.label}] ❌ DROP (Missing wire)`, '#ff6b6b', 'error');
+                            }
+                            
+                            forwardSteps = forwardSteps.filter((s: any) => outgoingEdges.some(e => e.target === s.targetNodeId));
+
+                            let chosenForwardSteps = forwardSteps;
+                            if (node.data.routingStrategy === 'load-balance' && forwardSteps.length > 1) {
+                                chosenForwardSteps = [forwardSteps[Math.floor(Math.random() * forwardSteps.length)]!];
+                            }
+
+                            if (chosenForwardSteps.length > 1) {
+                                const joinKey = `${node.id}_${pulse.requestId}`;
+                                if (!branchJoins.current[joinKey]) branchJoins.current[joinKey] = [];
+                                branchJoins.current[joinKey].push({
+                                    expected: chosenForwardSteps.length,
                                     completed: 0,
-                                };
+                                });
                             }
                             outgoingEdges.forEach((edge) =>
                                 forward(edge, 'request', '#ff4fa3'),
                             );
-                        } else {
-                            reply('response', '#9cf57a');
                         }
+                        
+                        executeSteps(new Set(['always']));
                     } else if (pulse.type === 'response') {
-                        trace(
-                            `[${tech.label}] Sending reply`,
-                            '#9cf57a',
-                            'response',
-                        );
-                        const callerId =
-                            inFlightLb.current[
-                                `${arrivedAtId}_${pulse.requestId}`
-                            ];
+                        const lbKey = `${arrivedAtId}_${pulse.requestId}`;
+                        const callers = inFlightLb.current[lbKey];
+                        const callerId = callers && callers.length > 0 ? callers.shift() : undefined;
+
                         const joinKey = `${arrivedAtId}:${pulse.requestId}`;
-                        const join = branchJoins.current[joinKey];
-                        if (join) {
-                            join.completed += 1;
-                            if (join.completed < join.expected) return;
-                            delete branchJoins.current[joinKey];
+                        const joins = branchJoins.current[joinKey];
+                        if (joins && joins.length > 0) {
+                            const join = joins[0];
+                            if (join) {
+                                join.completed += 1;
+                                if (join.completed < join.expected) return;
+                            }
+                            joins.shift();
+                            if (joins.length === 0) delete branchJoins.current[joinKey];
                         }
                         if (callerId) {
                             reply('response', '#9cf57a', callerId);
-                            delete inFlightLb.current[
-                                `${arrivedAtId}_${pulse.requestId}`
-                            ];
                         }
                     }
                 }
@@ -761,6 +833,10 @@ export function useSimulation(
         }
 
         const spawnClientRequests = () => {
+            if (totalLimit && requestSequence.current >= totalLimit) {
+                if (onAutoPause) onAutoPause();
+                return;
+            }
             const clients = nodesRef.current.filter(
                 (n) =>
                     techsRef.current.find((t) => t.id === n.data.technologyId)
@@ -817,5 +893,80 @@ export function useSimulation(
         }
     }, [isPlaying, singleCycle, requestsPerSecond]);
 
-    return { edgePulses, logs, metrics, bottleneckNodes, stepEvent };
+    const triggerChaosMonkey = useCallback(() => {
+        const services = nodesRef.current.filter(n => {
+            const tech = techsRef.current.find(t => t.id === n.data.technologyId);
+            return tech && (tech.category === 'service' || tech.category === 'data');
+        });
+        if (services.length > 0) {
+            const victim = services[Math.floor(Math.random() * services.length)]!;
+            setOfflineNodes(prev => new Set(prev).add(victim.id));
+            offlineNodesRef.current.add(victim.id);
+            addLog(`🐒 Chaos Monkey killed ${victim.data.label} (502 Gateway Error injected)!`, '#ff4fa3', { eventType: 'error' });
+            setTimeout(() => {
+                setOfflineNodes(prev => {
+                    const next = new Set(prev);
+                    next.delete(victim.id);
+                    return next;
+                });
+                offlineNodesRef.current.delete(victim.id);
+                addLog(`🐒 Chaos Monkey restarted ${victim.data.label}. System recovered.`, '#9cf57a', { eventType: 'system' });
+            }, 5000);
+        }
+    }, [addLog]);
+
+    const resetSimulationState = useCallback(() => {
+        setEdgePulses({});
+        setLogs([]);
+        setMetrics({
+            totalRequests: 0,
+            completedRequests: 0,
+            inFlightRequests: 0,
+            droppedRequests: 0,
+            totalLatency: 0,
+            totalErrors: 0,
+            avgLatency: 0,
+            p50Latency: 0,
+            p95Latency: 0,
+            p99Latency: 0,
+            latencyBreakdown: {},
+            throughputPerSecond: 0,
+            statusCodes: {},
+        });
+        setBottleneckNodes(new Set());
+        setNodeQueues({});
+        setFrozenNodes(new Set());
+        setOfflineNodes(new Set());
+        warnedNodesRef.current.clear();
+        inFlightLb.current = {};
+        branchJoins.current = {};
+        requestSequence.current = 0;
+        completedAt.current = [];
+        latencySamples.current = [];
+        simulationClock.current = 0;
+        eventSequence.current = 0;
+        eventQueue.current = [];
+        nodeQueuesRef.current = {};
+        nodeProcessingCount.current = {};
+        frozenNodesRef.current.clear();
+        offlineNodesRef.current.clear();
+    }, []);
+
+    const clearWarnings = useCallback(() => {
+        warnedNodesRef.current.clear();
+    }, []);
+
+    return { 
+        edgePulses, 
+        logs, 
+        metrics, 
+        bottleneckNodes, 
+        stepEvent, 
+        frozenNodes, 
+        offlineNodes, 
+        nodeQueues, 
+        triggerChaosMonkey, 
+        resetSimulationState, 
+        clearWarnings 
+    };
 }

@@ -7,6 +7,14 @@ export type LogicCondition =
     | 'on-success'
     | 'on-error';
 
+export interface SystemWarning {
+    id: string;
+    type: 'deadlock' | 'starvation' | 'dropped' | 'unprogrammed' | 'wiring' | 'bottleneck' | 'cache-thrashing';
+    message: string;
+    nodeId?: string;
+    timestamp: Date;
+}
+
 export interface NodeLatencyConfig {
     latencyProfileId?: string;
     latencyMultiplier?: number;
@@ -38,6 +46,7 @@ export interface DiagramNode {
         logicSteps?: LogicStep[];
         processingDelay?: number;
         latency?: NodeLatencyConfig;
+        routingStrategy?: 'broadcast' | 'load-balance';
     };
 }
 

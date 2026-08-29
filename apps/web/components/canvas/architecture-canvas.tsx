@@ -6,7 +6,15 @@ import {
     type NodeLatencyConfig,
     type TechnologyDefinition,
     type ProtocolDefinition,
+    type AiSecurityReviewResult,
+    type AiLogicTestResult,
+    type SystemWarning,
 } from '@architecture-studio/shared';
+import { useSecurityReview } from '../../hooks/use-security-review';
+import { SecurityReviewModal } from './security-review-modal';
+import { useLogicTester } from '../../hooks/use-logic-tester';
+import { LogicTestModal } from './logic-test-modal';
+import { FeedbackModal } from './feedback-modal';
 import {
     addEdge,
     Background,
@@ -29,6 +37,7 @@ import {
 import { toPng } from 'html-to-image';
 import {
     Activity,
+    AlertTriangle,
     Download,
     Eraser,
     HelpCircle,
@@ -48,6 +57,14 @@ import {
     Plus,
     Minus,
     Maximize,
+    Layout,
+    ShieldAlert,
+    TestTube,
+    Loader2,
+    ArrowRight,
+    ArrowLeft,
+    ArrowDown,
+    ArrowUp
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -69,6 +86,10 @@ import { NodePropertiesPanel } from './node-properties';
 import { TechContext } from './tech-context';
 import { DND_MIME, TechnologyPalette } from './tech-palette';
 import { InformationDrawer } from "./information-drawer";
+import { AiPromptModal } from "./ai-prompt-modal";
+import { useAiArchitect } from '../../hooks/use-ai-architect';
+import { useAutoResolve } from '../../hooks/use-auto-resolve';
+import { getLayoutedElements } from '../../lib/auto-layout';
 
 const STORAGE_KEY = 'architecture-studio:phase-2-diagram';
 
@@ -202,7 +223,6 @@ type StoredDiagram = {
     nodes: AppNode[];
     edges: EventFlowEdge[];
     viewport?: { x: number; y: number; zoom: number };
-    projectNotes?: string;
 };
 
 function CustomCanvasControls() {
@@ -244,31 +264,56 @@ export function ArchitectureCanvas() {
     const [projectNotes, setProjectNotes] = useState("");
     const [isStatsOpen, setIsStatsOpen] = useState(false);
     const [isNotesOpen, setIsNotesOpen] = useState(false);
+    
+    // Auto Layout Modal
+    const [isAutoLayoutModalOpen, setIsAutoLayoutModalOpen] = useState(false);
+    const [isAiToolsDropdownOpen, setIsAiToolsDropdownOpen] = useState(false);
+    const [layoutDirection, setLayoutDirection] = useState<'LR' | 'RL' | 'TB' | 'BT'>('LR');
+    
+    // AI Architect
+    const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+    const { generate, cancelGeneration, isGenerating, progress, error: aiError, clearError } = useAiArchitect();
+    const { resolveIssue, isResolving } = useAutoResolve(nodes as ArchitectureFlowNode[], edges, setNodes, setEdges);
+    const [resolveSuccessMessage, setResolveSuccessMessage] = useState<string | null>(null);
+    
+    // Security Review
+    const [isSecurityReviewModalOpen, setIsSecurityReviewModalOpen] = useState(false);
+    const [securityReviewResults, setSecurityReviewResults] = useState<AiSecurityReviewResult | null>(null);
+    const { runReview, cancelReview, isAnalyzing, error: securityError } = useSecurityReview();
+
+    // Logic Tester
+    const [isLogicTestModalOpen, setIsLogicTestModalOpen] = useState(false);
+    const [logicTestResults, setLogicTestResults] = useState<AiLogicTestResult | null>(null);
+    const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+    const { runTest, cancelTest, isTesting, error: logicTestError } = useLogicTester();
+    const [highlightedErrorNodeIds, setHighlightedErrorNodeIds] = useState<string[]>([]);
+    const [highlightedErrorEdgeIds, setHighlightedErrorEdgeIds] = useState<string[]>([]);
+    
     const [isSingleCycle, setIsSingleCycle] = useState(false);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [requestsPerSecond, setRequestsPerSecond] = useState(0.83);
-    const [maxInFlightRequests, setMaxInFlightRequests] = useState(8);
+    
+    // Playback Limits
+    const [maxInFlight, setMaxInFlight] = useState(100);
+    const [totalLimit, setTotalLimit] = useState(1000);
+    const [systemWarnings, setSystemWarnings] = useState<SystemWarning[]>([]);
+    const [isWarningsPanelOpen, setIsWarningsPanelOpen] = useState(false);
     const [toasts, setToasts] = useState<{ id: string; message: string }[]>([]);
 
-    const startContinuousSimulation = useCallback(() => {
-        setIsSingleCycle(false);
-        setIsPaused(false);
-        setIsPlaying(true);
-    }, []);
 
-    const stopSimulation = useCallback(() => {
-        setIsPlaying(false);
-        setIsPaused(false);
-        setIsSingleCycle(false);
-    }, []);
+    const handleAutoLayout = useCallback((direction: 'LR' | 'RL' | 'TB' | 'BT' = 'LR') => {
+        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges, direction);
+        setNodes(layoutedNodes as AppNode[]);
+        setEdges(layoutedEdges as EventFlowEdge[]);
+        if (flowInstance) {
+            setTimeout(() => {
+                flowInstance.fitView({ padding: 0.2, duration: 800 });
+            }, 50);
+        }
+        setIsAutoLayoutModalOpen(false);
+    }, [nodes, edges, setNodes, setEdges, flowInstance]);
 
-    const startSingleCycle = useCallback(() => {
-        // Stop and clear any paused or active run before starting a fresh cycle.
-        setIsPlaying(false);
-        setIsPaused(false);
-        setIsSingleCycle(false);
-        window.setTimeout(() => setIsSingleCycle(true), 0);
-    }, []);
+
 
     useEffect(() => {
         if (isPlaying || isSingleCycle) {
@@ -318,7 +363,6 @@ export function ArchitectureCanvas() {
                 if (Array.isArray(saved.nodes) && Array.isArray(saved.edges)) {
                     setNodes(saved.nodes);
                     setEdges(saved.edges);
-                    if (saved.projectNotes) setProjectNotes(saved.projectNotes);
                 }
             } catch {
                 window.localStorage.removeItem(STORAGE_KEY);
@@ -331,25 +375,91 @@ export function ArchitectureCanvas() {
         if (!isHydrated) return;
         window.localStorage.setItem(
             STORAGE_KEY,
-            JSON.stringify({ nodes, edges, projectNotes } satisfies StoredDiagram),
+            JSON.stringify({ 
+                nodes, 
+                edges, 
+            } satisfies StoredDiagram),
         );
-    }, [edges, isHydrated, nodes, projectNotes]);
+    }, [edges, isHydrated, nodes]);
 
     // Advanced Simulation Engine powered by LogicSteps
-    const { edgePulses, logs, metrics, bottleneckNodes, stepEvent } =
-        useSimulation(
-            nodes.filter(
-                (n) => n.type === 'architecture',
-            ) as ArchitectureFlowNode[],
-            edges,
-            isPlaying || isSingleCycle,
-            isPaused,
-            technologies,
-            isSingleCycle,
-            playbackSpeed,
-            requestsPerSecond,
-            maxInFlightRequests,
-        );
+    const handleWarning = useCallback((warning: SystemWarning) => {
+        setSystemWarnings((prev) => {
+            // Avoid duplicate warnings for the same issue
+            if (prev.some(w => w.nodeId === warning.nodeId && w.type === warning.type)) return prev;
+            return [...prev, warning];
+        });
+    }, []);
+
+    const {
+        edgePulses,
+        logs,
+        metrics,
+        bottleneckNodes,
+        frozenNodes,
+        offlineNodes,
+        nodeQueues,
+        stepEvent,
+        triggerChaosMonkey,
+        resetSimulationState,
+        clearWarnings,
+    } = useSimulation(
+        nodes.filter(
+            (n) => n.type === 'architecture',
+        ) as ArchitectureFlowNode[],
+        edges,
+        isPlaying || isSingleCycle,
+        isPaused,
+        technologies,
+        isSingleCycle,
+        playbackSpeed,
+        requestsPerSecond,
+        maxInFlight,
+        totalLimit,
+        handleWarning,
+        useCallback(() => {
+            setIsPlaying(false);
+            setIsSingleCycle(false);
+            setIsPaused(false);
+        }, [setIsPlaying, setIsSingleCycle, setIsPaused]),
+    );
+
+    const resetToolsState = useCallback(() => {
+        setSecurityReviewResults(null);
+        setLogicTestResults(null);
+        setHighlightedErrorNodeIds([]);
+        setHighlightedErrorEdgeIds([]);
+        setSystemWarnings([]);
+        clearWarnings();
+        setPropertiesNodeId(undefined);
+        setPropertiesEdgeId(undefined);
+        setSelectedEdgeId(undefined);
+        setInfoData(null);
+        setIsPlaying(false);
+        setIsPaused(false);
+        setIsLogWindowOpen(false);
+        setIsTelemetryOpen(false);
+    }, [clearWarnings]);
+
+    const startContinuousSimulation = useCallback(() => {
+        setIsSingleCycle(false);
+        setIsPaused(false);
+        setIsPlaying(true);
+    }, []);
+
+    const stopSimulation = useCallback(() => {
+        setIsPlaying(false);
+        setIsPaused(false);
+        setIsSingleCycle(false);
+    }, []);
+
+    const startSingleCycle = useCallback(() => {
+        // Stop and clear any paused or active run before starting a fresh cycle.
+        setIsPlaying(false);
+        setIsPaused(false);
+        setIsSingleCycle(false);
+        window.setTimeout(() => setIsSingleCycle(true), 0);
+    }, []);
 
     const stepSimulation = useCallback(() => {
         if (!isPlaying) {
@@ -399,6 +509,7 @@ export function ArchitectureCanvas() {
             logicSteps: LogicStep[],
             processingDelay?: number,
             latency?: NodeLatencyConfig,
+            routingStrategy?: 'broadcast' | 'load-balance',
         ) => {
             setNodes((nds) =>
                 nds.map((n) => {
@@ -414,6 +525,7 @@ export function ArchitectureCanvas() {
                                         ? processingDelay
                                         : archNode.data.processingDelay,
                                 latency: latency ?? archNode.data.latency,
+                                routingStrategy: routingStrategy ?? archNode.data.routingStrategy,
                             },
                         } as ArchitectureFlowNode;
                     }
@@ -544,16 +656,14 @@ export function ArchitectureCanvas() {
         );
     }, [eventName, selectedEdgeId, setEdges]);
 
-    const resetDemo = useCallback(() => {
+
+    const resetSimulation = useCallback(() => {
         setIsPlaying(false);
         setIsSingleCycle(false);
         setIsPaused(false);
         setSelectedEdgeId(undefined);
-        setNodes(initialNodes);
-        setEdges(initialEdges);
-        window.localStorage.removeItem(STORAGE_KEY);
-        window.setTimeout(() => flowInstance?.fitView({ padding: 0.2 }), 0);
-    }, [flowInstance, setEdges, setNodes]);
+        resetSimulationState();
+    }, [resetSimulationState]);
 
     // Export Features
     const handleExportJSON = () => {
@@ -582,6 +692,8 @@ export function ArchitectureCanvas() {
                 if (payload.nodes && payload.edges) {
                     setNodes(payload.nodes);
                     setEdges(payload.edges);
+                    resetToolsState();
+                    resetSimulationState();
                     if (payload.viewport && flowInstance) {
                         flowInstance.setViewport(payload.viewport);
                     } else {
@@ -608,6 +720,31 @@ export function ArchitectureCanvas() {
         a.click();
         URL.revokeObjectURL(url);
     }, [projectNotes]);
+
+    const handleDownloadSecurityReport = useCallback(() => {
+        if (!securityReviewResults) return;
+        
+        let md = `# Architecture Security Review\n\n`;
+        md += `**Risk Score**: ${securityReviewResults.overallRiskScore} / 100\n`;
+        md += `**Summary**: ${securityReviewResults.summary}\n\n`;
+        md += `## Findings (${securityReviewResults.vulnerabilities.length})\n\n`;
+        
+        securityReviewResults.vulnerabilities.forEach((vuln) => {
+            md += `### [${vuln.severity.toUpperCase()}] ${vuln.title} (${vuln.type})\n`;
+            md += `**Description**: ${vuln.description}\n\n`;
+            md += `**Affected Nodes**: ${vuln.affectedNodeIds.join(', ')}\n\n`;
+            md += `**Remediation**: ${vuln.remediation}\n\n`;
+            md += `---\n\n`;
+        });
+        
+        const blob = new Blob([md], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'security-review-report.md';
+        a.click();
+        URL.revokeObjectURL(url);
+    }, [securityReviewResults]);
 
     const downloadNotesJson = useCallback(() => {
         const blob = new Blob([JSON.stringify({ notes: projectNotes }, null, 2)], { type: 'application/json' });
@@ -755,23 +892,151 @@ export function ArchitectureCanvas() {
             <ReactFlowProvider>
             <main className="flex h-dvh min-h-[700px] flex-col overflow-hidden bg-[#fffdf5] p-3 sm:p-5 relative">
                 <header className="neo-panel mb-4 flex flex-col gap-3 bg-[#ffde59] px-4 py-3 sm:px-5">
-                    <div className="flex items-center gap-3">
-                        <div className="grid h-10 w-10 place-items-center border-[3px] border-[#161616] bg-[#ff4fa3]">
-                            <WandSparkles size={23} strokeWidth={3} />
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="grid h-10 w-10 place-items-center border-[3px] border-[#161616] bg-[#ff4fa3]">
+                                <WandSparkles size={23} strokeWidth={3} />
+                            </div>
+                            <div>
+                                <h1 className="m-0 text-xl font-black uppercase tracking-tight sm:text-2xl">
+                                    Architecture Studio
+                                </h1>
+                                <p className="m-0 text-xs font-bold">
+                                    Build it. Connect it. Play it.
+                                </p>
+                            </div>
                         </div>
-                        <div>
-                            <h1 className="m-0 text-xl font-black uppercase tracking-tight sm:text-2xl">
-                                Architecture Studio
-                            </h1>
-                            <p className="m-0 text-xs font-bold">
-                                Build it. Connect it. Play it.
-                            </p>
+
+                        {/* AI Tools */}
+                        <div className="relative shrink-0 z-[100]">
+                            <button
+                                className="neo-button flex items-center gap-2 bg-[#ffde59] px-4 py-2 border-[3px] border-[#161616] shadow-[3px_3px_0_#161616] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[1px_1px_0_#161616] transition-all"
+                                onClick={() => setIsAiToolsDropdownOpen(!isAiToolsDropdownOpen)}
+                                type="button"
+                                title="Open AI Tools"
+                            >
+                                <WandSparkles size={16} strokeWidth={3} />
+                                <span className="font-black uppercase text-sm">AI Tools</span>
+                            </button>
+
+                            {isAiToolsDropdownOpen && (
+                                <>
+                                    {/* Backdrop to close dropdown on click outside */}
+                                    <div 
+                                        className="fixed inset-0 z-[10005]" 
+                                        onClick={() => setIsAiToolsDropdownOpen(false)}
+                                    />
+                                    <div className="absolute right-0 top-full mt-3 flex w-[550px] flex-col border-[3px] border-[#161616] bg-[#fffdf5] shadow-[8px_8px_0_#161616] z-[10006] animate-in fade-in slide-in-from-top-2 origin-top-right">
+                                        <div className="bg-[#ff4fa3] px-4 py-3 border-b-[3px] border-[#161616] flex justify-between items-center">
+                                            <div className="flex items-center gap-2 text-white">
+                                                <WandSparkles size={18} strokeWidth={3} />
+                                                <span className="font-black uppercase tracking-wider text-sm">Magic AI Tools</span>
+                                            </div>
+                                            <button onClick={() => setIsAiToolsDropdownOpen(false)} className="hover:bg-white/20 p-1 rounded transition-colors">
+                                                <X size={18} strokeWidth={3} className="text-white" />
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="p-4 grid grid-cols-2 gap-4">
+                                            {/* AI Architect */}
+                                            <div className="border-[3px] border-[#161616] p-4 bg-white shadow-[4px_4px_0_#161616] flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="bg-[#ff4fa3] p-1.5 border-[2px] border-[#161616] text-white shrink-0">
+                                                            <WandSparkles size={16} strokeWidth={3} />
+                                                        </div>
+                                                        <h3 className="font-black uppercase text-sm leading-tight">AI Architect</h3>
+                                                    </div>
+                                                    <p className="text-xs text-gray-600 font-medium mb-4">Prompt-to-Architecture. Describe your system and let AI build it.</p>
+                                                </div>
+                                                <button
+                                                    className="neo-button w-full bg-[#161616] text-white px-3 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
+                                                    onClick={() => {
+                                                        setIsAiModalOpen(true);
+                                                        setIsAiToolsDropdownOpen(false);
+                                                    }}
+                                                >
+                                                    Open Generator
+                                                </button>
+                                            </div>
+
+                                            {/* Auto-Layout */}
+                                            <div className="border-[3px] border-[#161616] p-4 bg-white shadow-[4px_4px_0_#161616] flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="bg-[#5de2e7] p-1.5 border-[2px] border-[#161616] shrink-0">
+                                                            <Layout size={16} strokeWidth={3} />
+                                                        </div>
+                                                        <h3 className="font-black uppercase text-sm leading-tight">Auto-Layout</h3>
+                                                    </div>
+                                                    <p className="text-xs text-gray-600 font-medium mb-4">Automatically arrange your nodes and wires into a clean flow.</p>
+                                                </div>
+                                                <button
+                                                    className="neo-button w-full bg-[#161616] text-white px-3 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
+                                                    onClick={() => {
+                                                        setIsAutoLayoutModalOpen(true);
+                                                        setIsAiToolsDropdownOpen(false);
+                                                    }}
+                                                >
+                                                    Open Formatter
+                                                </button>
+                                            </div>
+
+                                            {/* Security Review */}
+                                            <div className="border-[3px] border-[#161616] p-4 bg-white shadow-[4px_4px_0_#161616] flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="bg-[#ff6b6b] p-1.5 border-[2px] border-[#161616] text-white shrink-0">
+                                                            <ShieldAlert size={16} strokeWidth={3} />
+                                                        </div>
+                                                        <h3 className="font-black uppercase text-sm leading-tight">Security Review</h3>
+                                                    </div>
+                                                    <p className="text-xs text-gray-600 font-medium mb-4">Scan for vulnerabilities, bottlenecks, and single points of failure.</p>
+                                                </div>
+                                                <button
+                                                    className="neo-button w-full bg-[#161616] text-white px-3 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
+                                                    onClick={() => {
+                                                        setIsSecurityReviewModalOpen(true);
+                                                        setIsAiToolsDropdownOpen(false);
+                                                    }}
+                                                >
+                                                    Open Scanner
+                                                </button>
+                                            </div>
+
+                                            {/* Logic Tester */}
+                                            <div className="border-[3px] border-[#161616] p-4 bg-white shadow-[4px_4px_0_#161616] flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="bg-[#ffde59] p-1.5 border-[2px] border-[#161616] shrink-0">
+                                                            <TestTube size={16} strokeWidth={3} />
+                                                        </div>
+                                                        <h3 className="font-black uppercase text-sm leading-tight">Logic Tester</h3>
+                                                    </div>
+                                                    <p className="text-xs text-gray-600 font-medium mb-4">Check for infinite loops, missing fallbacks, and queue errors.</p>
+                                                </div>
+                                                <button
+                                                    className="neo-button w-full bg-[#161616] text-white px-3 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
+                                                    onClick={() => {
+                                                        setIsLogicTestModalOpen(true);
+                                                        setIsAiToolsDropdownOpen(false);
+                                                    }}
+                                                >
+                                                    Open Tester
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
 
-                    <div className="flex w-full items-center gap-3 overflow-x-auto border-t-[3px] border-[#161616] pt-3 pb-1 lg:gap-2">
+                    <div className="flex w-full flex-col lg:flex-row items-start lg:items-center justify-between border-t-[3px] border-[#161616] pt-3 gap-3 lg:gap-0">
+                        <div className="flex flex-wrap items-center gap-3 lg:gap-2">
+
                         <button
-                            className="header-control neo-button flex shrink-0 items-center gap-2 bg-[#ff4fa3] px-3 text-white"
+                            className="header-control neo-button flex shrink-0 items-center gap-2 bg-white px-3"
                             onClick={startSingleCycle}
                             type="button"
                             title="Run one request cycle"
@@ -857,28 +1122,51 @@ export function ArchitectureCanvas() {
                             />
                         </label>
 
-                        <label className="header-control neo-control flex shrink-0 items-center gap-2 bg-[#f0f0f0] px-3" title="Maximum concurrent requests">
-                            <span className="font-black text-gray-700 text-[10px] uppercase">Max Flight</span>
+                        <label className="header-control neo-control flex shrink-0 items-center gap-2 bg-[#f0f0f0] px-3" title="Max concurrent packets allowed in flight">
+                            <span className="font-black text-gray-700 text-[10px] uppercase">Max Active</span>
                             <input
-                                className="w-14 h-7 bg-white border-[2px] border-[#161616] px-1 text-xs font-black shadow-[2px_2px_0_#161616] outline-none hover:bg-gray-50 transition-colors"
+                                className="w-16 h-7 bg-white border-[2px] border-[#161616] px-1 text-xs font-black shadow-[2px_2px_0_#161616] outline-none hover:bg-gray-50 transition-colors"
                                 type="number"
                                 min="1"
-                                max="100"
-                                value={maxInFlightRequests}
+                                max="1000"
+                                step="1"
+                                value={maxInFlight === Infinity ? '' : maxInFlight}
                                 onChange={(event) =>
-                                    setMaxInFlightRequests(
-                                        Math.min(
-                                            100,
-                                            Math.max(
-                                                1,
-                                                Number(event.target.value),
-                                            ),
-                                        ),
+                                    setMaxInFlight(
+                                        event.target.value === '' ? Infinity : Math.max(1, Number(event.target.value))
                                     )
                                 }
-                                title="Maximum in-flight requests"
+                                placeholder="∞"
                             />
                         </label>
+
+                        <label className="header-control neo-control flex shrink-0 items-center gap-2 bg-[#f0f0f0] px-3" title="Absolute total packets to send before stopping">
+                            <span className="font-black text-gray-700 text-[10px] uppercase">Limit</span>
+                            <input
+                                className="w-16 h-7 bg-white border-[2px] border-[#161616] px-1 text-xs font-black shadow-[2px_2px_0_#161616] outline-none hover:bg-gray-50 transition-colors"
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={totalLimit === Infinity ? '' : totalLimit}
+                                onChange={(event) =>
+                                    setTotalLimit(
+                                        event.target.value === '' ? Infinity : Math.max(1, Number(event.target.value))
+                                    )
+                                }
+                                placeholder="∞"
+                            />
+                        </label>
+
+                        <button
+                            className="header-control neo-button flex shrink-0 items-center gap-2 bg-[#ff6b6b] px-3 disabled:!bg-gray-200 disabled:!text-gray-400 disabled:!border-gray-400 disabled:shadow-none disabled:translate-y-[3px] disabled:translate-x-[3px] disabled:cursor-not-allowed"
+                            onClick={triggerChaosMonkey}
+                            type="button"
+                            title="Trigger a massive latency spike on a random backend node!"
+                            disabled={!isPlaying && !isPaused}
+                        >
+                            <span className="hidden sm:inline">🐒</span>
+                            <span className="hidden sm:inline font-black text-xs uppercase text-white">Chaos</span>
+                        </button>
 
                         <button
                             className="header-control neo-button flex shrink-0 items-center gap-2 bg-[#5de2e7] px-3 disabled:!bg-gray-200 disabled:!text-gray-400 disabled:!border-gray-400 disabled:shadow-none disabled:translate-y-[3px] disabled:translate-x-[3px] disabled:cursor-not-allowed"
@@ -893,9 +1181,9 @@ export function ArchitectureCanvas() {
 
                         <button
                             className="header-control neo-button flex shrink-0 items-center gap-2 bg-[#fffdf5] px-3"
-                            onClick={resetDemo}
+                            onClick={resetSimulation}
                             type="button"
-                            title="Reset Simulation"
+                            title="Reset Simulation State"
                         >
                             <RotateCcw size={17} strokeWidth={3} />{' '}
                             <span className="hidden sm:inline">Reset</span>
@@ -911,6 +1199,9 @@ export function ArchitectureCanvas() {
                             <StopCircle size={16} strokeWidth={3} />
                             <span className="hidden sm:inline">Stop</span>
                         </button>
+                        </div>
+
+
                     </div>
                 </header>
 
@@ -1057,16 +1348,34 @@ export function ArchitectureCanvas() {
                                         </span>
                                     </div>
 
-                                    <div className="flex justify-between items-center text-sm">
-                                        <span className="font-bold text-[#161616]/70">
-                                            Error Rate
-                                        </span>
-                                        <span className="font-black text-[#ff4fa3]">
-                                            {metrics.totalRequests > 0
-                                                ? `${Math.round((metrics.totalErrors / metrics.totalRequests) * 100)}%`
-                                                : '0%'}
-                                        </span>
-                                    </div>
+                                    {Object.keys(metrics.statusCodes).length > 0 ? (
+                                        <div className="mt-1 border-t-[2px] border-[#161616] pt-1">
+                                            <div className="mb-1 text-[10px] font-black uppercase text-[#161616]/70">
+                                                Status Codes
+                                            </div>
+                                            {Object.entries(metrics.statusCodes).map(([code, count]) => {
+                                                const codeNum = parseInt(code, 10);
+                                                const color = codeNum >= 500 ? '#ff6b6b' : codeNum >= 400 ? '#ffad66' : '#9cf57a';
+                                                return (
+                                                    <div key={code} className="flex justify-between items-center text-[11px] font-bold">
+                                                        <span style={{ color }}>{code}</span>
+                                                        <span className="text-[#161616]">{count}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="font-bold text-[#161616]/70">
+                                                Error Rate
+                                            </span>
+                                            <span className="font-black text-[#ff4fa3]">
+                                                {metrics.totalRequests > 0
+                                                    ? `${Math.round((metrics.totalErrors / metrics.totalRequests) * 100)}%`
+                                                    : '0%'}
+                                            </span>
+                                        </div>
+                                    )}
                                     <div className="flex justify-between items-center text-sm">
                                         <span className="font-bold text-[#161616]/70">
                                             In Flight
@@ -1156,11 +1465,22 @@ export function ArchitectureCanvas() {
                                               ...n.data,
                                               isBottleneck:
                                                   bottleneckNodes?.has(n.id),
+                                              queueLength:
+                                                  nodeQueues?.[n.id]?.length || 0,
+                                              isFrozen: frozenNodes?.has(n.id),
+                                              isOffline: offlineNodes?.has(n.id),
+                                              isHighlightedError: highlightedErrorNodeIds.includes(n.id),
                                           },
                                       }
                                     : n,
                             )}
-                            edges={edges}
+                            edges={edges.map(e => ({
+                                ...e,
+                                data: {
+                                    ...e.data,
+                                    isHighlightedError: highlightedErrorEdgeIds.includes(e.id),
+                                } as EventFlowEdge['data']
+                            }))}
                             nodeTypes={nodeTypes}
                             edgeTypes={edgeTypes}
                             onNodesChange={onNodesChange}
@@ -1277,16 +1597,26 @@ export function ArchitectureCanvas() {
                             fitView
                             deleteKeyCode={['Backspace', 'Delete']}
                             proOptions={{ hideAttribution: true }}
+                            minZoom={0.01}
+                            maxZoom={100}
                         >
                             <Background color="#161616" gap={22} size={1} />
                             
+                            <svg className="absolute w-0 h-0">
+                                <defs>
+                                    <filter id="motion-blur" x="-20%" y="-20%" width="140%" height="140%">
+                                        <feGaussianBlur stdDeviation="3 0" />
+                                    </filter>
+                                </defs>
+                            </svg>
+
                             <CustomCanvasControls />
                         </ReactFlow>
                         {isLogWindowOpen ? (
-                            <div className="absolute bottom-4 left-16 z-50 flex w-80 flex-col overflow-hidden border-[3px] border-[#161616] bg-white shadow-[6px_6px_0_#161616]">
-                                <div className="flex justify-between items-center border-b-[3px] border-[#161616] bg-[#5de2e7] px-3 py-1.5 text-xs font-black uppercase">
+                            <div className={`absolute bottom-4 right-4 z-[10000] flex w-[400px] flex-col overflow-hidden border-[3px] border-[#161616] bg-white shadow-[6px_6px_0_#161616] ${propertiesNodeId || propertiesEdgeId || infoData ? 'hidden' : ''}`}>
+                                <div className="flex justify-between items-center border-b-[3px] border-[#161616] bg-[#5de2e7] px-3 py-2 text-xs font-black uppercase">
                                     <span className="flex items-center gap-2">
-                                        <Terminal size={14} /> Simulation Logs
+                                        <Terminal size={14} /> Process & Drop Logs
                                     </span>
                                     <button
                                         onClick={() =>
@@ -1315,16 +1645,16 @@ export function ArchitectureCanvas() {
                                         Live Console
                                     </button>
                                 </div>
-                                <div className="flex h-48 flex-col-reverse overflow-y-auto bg-[#161616] p-2 text-xs font-mono">
+                                <div className="flex h-56 flex-col-reverse overflow-y-auto bg-[#161616] p-3 text-xs font-mono">
                                     {logs.length === 0 ? (
                                         <div className="text-gray-500">
-                                            Waiting for events...
+                                            Waiting for packets to process...
                                         </div>
                                     ) : (
                                         [...logs].reverse().map((log) => (
                                             <div
                                                 key={log.id}
-                                                className="mb-1 flex items-start gap-2 break-words"
+                                                className="mb-1 flex items-start gap-2 break-words leading-relaxed"
                                             >
                                                 {terminalView === 'trace' ? (
                                                     <span className="shrink-0 text-[#5de2e7]">
@@ -1370,11 +1700,11 @@ export function ArchitectureCanvas() {
                                 </div>
                             </div>
                         ) : (
-                            <div className="absolute bottom-4 left-16 z-50 flex items-center gap-3">
+                            <div className={`absolute bottom-4 right-4 z-[10000] flex items-center gap-3 ${propertiesNodeId || propertiesEdgeId || infoData ? 'hidden' : ''}`}>
                                 <button
                                     onClick={() => setIsLogWindowOpen(true)}
-                                    className="neo-button flex h-10 w-10 items-center justify-center bg-[#5de2e7] border-[3px] border-[#161616] shadow-[4px_4px_0_#161616] transition-transform hover:-translate-y-1 hover:translate-x-1 hover:shadow-[0_0_0_#161616]"
-                                    title="Open Simulation Logs"
+                                    className="neo-button flex h-10 w-10 items-center justify-center bg-[#161616] text-[#5de2e7] border-[3px] border-[#161616] shadow-[4px_4px_0_#5de2e7] transition-transform hover:-translate-y-1 hover:translate-x-1 hover:shadow-[0_0_0_#5de2e7]"
+                                    title="Open Process & Drop Logs"
                                     type="button"
                                 >
                                     <Terminal size={20} strokeWidth={3} />
@@ -1413,196 +1743,91 @@ export function ArchitectureCanvas() {
                                             </button>
                                         </div>
                                         <div className="flex-1 overflow-y-auto overscroll-contain p-6 text-sm font-medium space-y-8 custom-scrollbar">
-<div>
+
+                                        <div>
+                                            <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#ffde59] px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
+                                                🚀 Quick Start for Beginners
+                                            </h3>
+                                            <p className="mb-3 text-sm text-[#161616] font-medium">Zero knowledge about system design? No problem! Follow these 5 steps to manually build an architecture, or use the AI to do it instantly:</p>
+                                            <ol className="list-decimal space-y-2 pl-5 text-sm font-bold bg-white border-[2px] border-[#161616] p-4 shadow-[4px_4px_0_#161616]">
+                                                <li><b>The User:</b> Drag a <span className="text-[#9cf57a]">Client</span> (Mobile App, Web) onto the canvas to generate traffic.</li>
+                                                <li><b>The Front Door:</b> Drag an <span className="text-[#5de2e7]">API Gateway</span> next to it and connect the Client to the Gateway.</li>
+                                                <li><b>The Brain:</b> Drag a <span className="text-[#a18cff]">Service</span> (Node.js, Python) and connect the Gateway to it.</li>
+                                                <li><b>The Memory:</b> Drag a <span className="text-[#ff4fa3]">Database</span> (Postgres) and connect the Service to it.</li>
+                                                <li><b>The Magic:</b> Click the <span className="text-[#ffde59]">Play (▶)</span> button at the top and watch packets flow through the system!</li>
+                                            </ol>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#ff4fa3] text-white px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
+                                                ✨ The AI Architect Tools
+                                            </h3>
+                                            <p className="mb-3 text-sm text-[#161616] font-medium">Architecture Studio has an integrated Senior Principal Engineer. Let the AI do the heavy lifting!</p>
+                                            <ul className="list-disc space-y-2 pl-4 text-sm font-bold">
+                                                <li>
+                                                    <span className="text-[#ff4fa3]">Prompt-to-Architecture:</span> Click the sparkles icon in the header. Type a description like "E-commerce backend with Postgres and Kafka", and the AI will generate the entire diagram, including nodes, wires, and internal logic routing.
+                                                </li>
+                                                <li>
+                                                    <span className="text-[#ff4fa3]">Security Review:</span> Click the shield icon. The AI will scan your architecture to find missing authentication, network vulnerabilities, bottlenecks, and single points of failure.
+                                                </li>
+                                                <li>
+                                                    <span className="text-[#ff4fa3]">Logic Tester:</span> Click the test tube icon. The AI will run a deep architectural scan to trace logic flow and find infinite loops, routing black holes, protocol mismatches, and missing fallbacks.
+                                                </li>
+                                                <li>
+                                                    <span className="text-[#ff4fa3]">✨ Auto-Resolve:</span> A smart AI repair engine! Whenever the <b>System Watchdog</b> detects a bottleneck at runtime, or the <b>Security / Logic Testers</b> find a vulnerability, click the <span className="bg-[#5de2e7] border-2 border-[#161616] px-1">✨ Auto Resolve</span> button. The AI will instantly analyze the problem, generate a patch, and physically fix the architecture on the canvas (injecting Queues, rewiring connections, handling bidirectional responses, or tweaking cache rates).
+                                                </li>
+                                            </ul>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#9cf57a] px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
+                                                🎮 Physics, Engine & Diagnostics
+                                            </h3>
+                                            <p className="mb-3 text-sm text-[#161616] font-medium">The simulation engine strictly enforces real-world computing physics. There is no hidden magic.</p>
+                                            <ul className="list-disc space-y-2 pl-4 text-sm font-bold">
+                                                <li>
+                                                    <span className="text-green-600">Strict Latency Constraints:</span> Node processing times are mathematically calculated based on the <b>Workload</b> (Light=15ms, Normal=50ms, Heavy=150ms) plus <b>Network Hops</b> (20ms each).
+                                                </li>
+                                                <li>
+                                                    <span className="text-green-600">Queues & Overflows (503s):</span> Every node has a maximum memory queue size defined by its <b>Concurrency</b> multiplier. If a node is processing too slowly and its queue fills up, the engine drops packets and fires a red <b>503 Service Unavailable (Overflow)</b> error.
+                                                </li>
+                                                <li>
+                                                    <span className="text-green-600">Cascading Errors:</span> If a downstream node (like a Database) fails or goes offline, it returns a 503 error up the chain. Middle microservices will catch this error and blindly forward it up to the API Gateway, and finally the Client—exactly like HTTP status codes!
+                                                </li>
+                                                <li>
+                                                    <span className="text-green-600">System Watchdog:</span> A background diagnostic scanner actively watches your system and pops out the Warnings Drawer if it detects Deadlocks, Starvation, Missing Logic, Bottlenecks, Cache Thrashing, or Invalid Wiring.
+                                                </li>
+                                                <li>
+                                                    <span className="text-green-600">Smooth Visuals:</span> Packets shape-shift based on protocol (🟦 blocks for HTTP, 🛢️ cylinders for SQL, ✨ dashed lines for streams). They change color based on success (🟩 Green), client error (🟨 Yellow), or server error (🟥 Red).
+                                                </li>
+                                            </ul>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#a18cff] text-white px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
+                                                🛠️ Manual Configuration & Logic
+                                            </h3>
+                                            <p className="mb-3 text-sm text-[#161616] font-medium">Nodes are "dumb" by default. You (or the AI) must tell them exactly how to route traffic.</p>
+                                            <ul className="list-disc space-y-2 pl-4 text-sm font-bold">
+                                                <li><b>Double-Click a Node:</b> Opens its Logic & Physics panel.</li>
+                                                <li><b>Define Logic Steps:</b> Add steps like <i>"Simulate Cache"</i>, <i>"If Hit &rarr; Reply"</i>, <i>"If Miss &rarr; Forward to Database"</i>. You must handle both <code>on-success</code> and <code>on-error</code> conditions to properly route responses back to the caller!</li>
+                                                <li><b>Wire Protocols:</b> Click any wire to open the Wire Settings. You can change its label, specify the exact protocol (WebSocket, Kafka, gRPC), and adjust its shape (curve vs step).</li>
+                                                <li><b>Chaos Monkey 🐒:</b> Click the Chaos button in the header to randomly knock a backend node offline for 5 seconds to test your system's resilience (expect 502 Bad Gateway errors).</li>
+                                            </ul>
+                                        </div>
+
+                                        <div>
                                             <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#ffad66] px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
-                                                Toolbar Reference
+                                                🎛️ Header & Toolbar Controls
                                             </h3>
                                             <ul className="list-disc space-y-1.5 pl-4 text-sm font-bold">
-                                                <li>
-                                                    <b>Import:</b> load a
-                                                    previously exported JSON
-                                                    diagram.
-                                                </li>
-                                                <li>
-                                                    <b>JSON:</b> export nodes,
-                                                    connections, and diagram
-                                                    settings.
-                                                </li>
-                                                <li>
-                                                    <b>PNG:</b> export the
-                                                    visible canvas as an image.
-                                                </li>
-                                                <li>
-                                                    <b>Record:</b> capture a
-                                                    one-cycle WebM walkthrough
-                                                    of the flow.
-                                                </li>
-                                                <li>
-                                                    <b>Run Once:</b> clear the
-                                                    current run and execute one
-                                                    fresh request.
-                                                </li>
-                                                <li>
-                                                    <b>Play:</b> start or resume
-                                                    continuous traffic. It exits
-                                                    single-cycle mode.
-                                                </li>
-                                                <li>
-                                                    <b>Pause:</b> freeze the
-                                                    simulation clock and keep
-                                                    packets in place.
-                                                </li>
-                                                <li>
-                                                    <b>Speed:</b> change
-                                                    playback speed without
-                                                    changing modeled latency
-                                                    values.
-                                                </li>
-                                                <li>
-                                                    <b>RPS:</b> set requests
-                                                    generated per second.{' '}
-                                                    <b>Max In Flight</b> limits
-                                                    active requests; excess
-                                                    requests are dropped and
-                                                    counted.
-                                                </li>
-                                                <li>
-                                                    <b>Step:</b> from idle,
-                                                    prepare a paused run;
-                                                    afterward, process exactly
-                                                    one queued event per click.
-                                                </li>
-                                                <li>
-                                                    <b>Reset:</b> restore the
-                                                    example diagram and clear
-                                                    the active simulation.
-                                                </li>
-                                            </ul>
-                                        </div>
-
-                                        <div>
-                                            <h3 className="font-black uppercase bg-[#5de2e7] border-[2px] border-[#161616] px-2 py-1 inline-block mb-2 shadow-[2px_2px_0_#161616]">
-                                                Building the Canvas
-                                            </h3>
-                                            <ul className="list-disc pl-4 space-y-1.5 text-sm font-bold">
-                                                <li>
-                                                    <b>Drag components</b> from
-                                                    the left sidebar onto the
-                                                    canvas.
-                                                </li>
-                                                <li>
-                                                    <b>Connect nodes</b> by
-                                                    dragging a wire from a{' '}
-                                                    <b className="text-[#ff4fa3]">
-                                                        Pink handle
-                                                    </b>{' '}
-                                                    (output) to a{' '}
-                                                    <b className="text-[#e2b704]">
-                                                        Yellow handle
-                                                    </b>{' '}
-                                                    (input).
-                                                </li>
-                                                <li>
-                                                    <b>Delete items</b> by
-                                                    selecting them and pressing{' '}
-                                                    <kbd className="border-[2px] border-[#161616] px-1 bg-gray-100 rounded-[2px]">
-                                                        Backspace
-                                                    </kbd>{' '}
-                                                    or clicking their delete
-                                                    buttons in properties.
-                                                </li>
-                                                <li>
-                                                    <b>Move around:</b> drag an
-                                                    empty area to pan, use the
-                                                    mouse wheel to zoom, and use
-                                                    the canvas controls to reset
-                                                    the view.
-                                                </li>
-                                                <li>
-                                                    <b>Boundaries:</b> drop a
-                                                    boundary around components
-                                                    to group them by VPC,
-                                                    subnet, region, or cluster.
-                                                </li>
-                                            </ul>
-                                        </div>
-
-                                        <div>
-                                            <h3 className="font-black uppercase bg-[#a18cff] border-[2px] border-[#161616] px-2 py-1 inline-block mb-2 shadow-[2px_2px_0_#161616]">
-                                                Configuring Logic
-                                            </h3>
-                                            <ul className="list-disc pl-4 space-y-1.5 text-sm font-bold">
-                                                <li>
-                                                    <b>Nodes:</b>{' '}
-                                                    <b>Double-click</b> any node
-                                                    to open its Logic panel.
-                                                    Here you can write
-                                                    instructions on how it
-                                                    processes requests, queries
-                                                    databases, and handles
-                                                    errors.
-                                                </li>
-                                                <li>
-                                                    <b>Wires:</b> <b>Click</b>{' '}
-                                                    any wire to open the Wire
-                                                    Settings window. You can
-                                                    change its label, specify
-                                                    the exact protocol (e.g.,
-                                                    WebSocket, Kafka), and
-                                                    adjust its routing shape.
-                                                </li>
-                                                <li>
-                                                    <b>Routing:</b> logic steps
-                                                    run in order. Forward sends
-                                                    a request to a selected
-                                                    node, Reply returns success,
-                                                    and Cache Check creates hit
-                                                    or miss behavior.
-                                                </li>
-                                                <li>
-                                                    <b>Connections:</b> invalid
-                                                    architecture connections are
-                                                    rejected with an
-                                                    explanation. Use event names
-                                                    and protocols to document
-                                                    each wire.
-                                                </li>
-                                                <li>
-                                                    <b>Node popup:</b>{' '}
-                                                    double-click a technology
-                                                    card to edit processing
-                                                    delay, logic steps,
-                                                    workload, cache hit rate,
-                                                    concurrency, network hops,
-                                                    latency multiplier, and
-                                                    extra latency. Changes save
-                                                    immediately.
-                                                </li>
-                                                <li>
-                                                    <b>Wire popup:</b> click a
-                                                    connection to edit its event
-                                                    name, protocol/type, and
-                                                    shape: curve, step, or
-                                                    straight. Click outside or
-                                                    use close to dismiss it.
-                                                </li>
-                                                <li>
-                                                    <b>Protocol list:</b> scroll
-                                                    inside the list to browse
-                                                    synchronous APIs, events,
-                                                    streaming, data, network,
-                                                    and application protocols.
-                                                    Save the wire after choosing
-                                                    one.
-                                                </li>
-                                                <li>
-                                                    <b>Save Changes</b> applies
-                                                    wire edits. The trash button
-                                                    permanently deletes that
-                                                    wire. Node logic and latency
-                                                    fields update as you edit
-                                                    them.
-                                                </li>
+                                                <li><b>RPS:</b> Requests Per Second (how fast the client generates traffic).</li>
+                                                <li><b>Max Active:</b> Caps the total number of packets allowed in-flight at once to prevent browser lag.</li>
+                                                <li><b>Total Limit:</b> Hard limit on total packets sent before the simulation auto-stops.</li>
+                                                <li><b>Speed (1x-100x):</b> Speeds up the visual rendering time without changing the mathematical latency values of the physics engine.</li>
+                                                <li><b>Record:</b> Captures a one-cycle WebM walkthrough of the flow!</li>
+                                                <li><b>Step:</b> Manually advance the simulation exactly one tick at a time.</li>
+                                                <li><b>Auto-Layout:</b> Automatically arrange your canvas nodes directionally.</li>
                                             </ul>
                                         </div>
 
@@ -1789,25 +2014,21 @@ export function ArchitectureCanvas() {
                                             </ul>
                                         </div>
 
+
+
                                         <div>
                                             <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#ffde59] px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
                                                 Architecture Tools
                                             </h3>
                                             <ul className="list-disc space-y-1.5 pl-4 text-sm font-bold">
                                                 <li>
-                                                    <b>Architecture Stats:</b> Click the <b>View Stats</b> button in the Right Sidebar (Canvas Tools) to see a live telemetry pop-up counting all components, connections, compute, and databases.
+                                                    <b>Architecture Stats:</b> Click <b>View Stats</b> in the Right Sidebar to see live component telemetry.
                                                 </li>
                                                 <li>
-                                                    <b>Project Notes:</b> Click <b>Project Notes</b> in the Right Sidebar to open a dedicated workspace scratchpad. Jot down requirements or architectural decisions.
+                                                    <b>Project Notes:</b> Click <b>Project Notes</b> to open a persistent scratchpad for architectural decisions.
                                                 </li>
                                                 <li>
-                                                    <b>Export Notes:</b> From inside the Project Notes window, you can seamlessly download your notes locally as a <b>.TXT</b> or <b>.JSON</b> file.
-                                                </li>
-                                                <li>
-                                                    <b>Persistent State:</b> Your Project Notes automatically save alongside your canvas state!
-                                                </li>
-                                                <li>
-                                                    <b>Massive Knowledge Base:</b> Every single one of the 275+ technologies and protocols now features highly specific, unique documentation tailored to it.
+                                                    <b>Bug Reporter:</b> Found a loophole in the physics engine? Click <b>Report Bug</b> in the right sidebar to instantly notify the engineering team so we can fix it!
                                                 </li>
                                             </ul>
                                         </div>
@@ -1868,7 +2089,35 @@ export function ArchitectureCanvas() {
                                                 <li>
                                                     <b>Live Telemetry:</b> The HUD at the bottom of the screen tracks real-time RPS, Average Latency, and Error rates as packets travel.
                                                 </li>
-</ul>
+                                            </ul>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-white px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
+                                                📚 Terminology & Metrics
+                                            </h3>
+                                            <ul className="list-disc space-y-1.5 pl-4 text-sm font-bold">
+                                                <li><b>Throughput (RPS):</b> The number of requests successfully completed by the Client per simulated second.</li>
+                                                <li><b>Latency (Average):</b> The total simulated time it took a request to leave the client, traverse all microservices/databases, and return.</li>
+                                                <li><b>P95 & P99:</b> Statistical estimates showing the latency threshold that the fastest 95% (or 99%) of your users will experience.</li>
+                                                <li><b>Concurrency / Max Active:</b> How many simultaneous requests the system can handle before packets start queueing up in memory.</li>
+                                                <li><b>Cache Thrashing:</b> When a Cache node has a hit-rate that is too low, forcing the backend database to do the same amount of work, rendering the cache useless.</li>
+                                                <li><b>Deadlock:</b> When an infinite loop of routing occurs (Node A &rarr; Node B &rarr; Node A) causing the physics engine to trap the packet forever.</li>
+                                                <li><b>Starvation:</b> When a node's incoming traffic vastly exceeds its processing speed, causing its internal queue to overflow indefinitely.</li>
+                                            </ul>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#161616] text-[#9cf57a] px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
+                                                🎨 Visual Glossary
+                                            </h3>
+                                            <ul className="list-disc space-y-2 pl-4 text-sm font-bold">
+                                                <li><b>Packets (Data):</b> HTTP traffic flows as solid 🟦 Squares. Database queries flow as 🛢️ Cylinders (using standard database protocol). Streaming protocols flow as animated ✨ Dashed Lines.</li>
+                                                <li><b>Packet Colors:</b> 🟩 Green indicates a successful 200 OK response. 🟨 Yellow indicates a 4xx Client Error (e.g. Cache Miss). 🟥 Red indicates a critical 5xx Server Error or Queue Overflow.</li>
+                                                <li><b>Nodes (Components):</b> Solid boxes with thick borders. Their color represents their category (e.g., Pink for Network/API Gateways, Blue for Microservices, Green for Databases).</li>
+                                                <li><b>Boundaries (VPCs):</b> Large transparent boxes with dashed borders. Use these to visually group elements into AWS Regions, Subnets, or Kubernetes Clusters.</li>
+                                                <li><b>Wires:</b> You can customize wire styles! Double click a wire to change it from a smooth Bezier curve to a strict Step layout or straight line.</li>
+                                            </ul>
                                         </div>
 
                                         <div>
@@ -2077,6 +2326,8 @@ export function ArchitectureCanvas() {
                                     onClick={() => {
                                         setNodes([]);
                                         setEdges([]);
+                                        resetToolsState();
+                                        resetSimulationState();
                                     }}
                                     type="button"
                                 >
@@ -2100,13 +2351,20 @@ export function ArchitectureCanvas() {
                                 >
                                     <FileText size={18} strokeWidth={3} /> Project Notes
                                 </button>
+                                <button
+                                    onClick={() => setIsFeedbackOpen(true)}
+                                    className="neo-button flex w-full items-center justify-center gap-2 border-[3px] border-[#161616] bg-white px-3 py-3 text-sm font-black uppercase shadow-[3px_3px_0_#161616] hover:bg-gray-50"
+                                    type="button"
+                                >
+                                    <AlertTriangle size={18} strokeWidth={3} className="text-[#ff6b6b]" /> Report Bug
+                                </button>
                             </div>
                         </div>
                     </aside>
                 </div>
 
                 {/* Floating Validation Toasts */}
-                <div className="pointer-events-none fixed bottom-6 right-6 z-[9999] flex flex-col gap-2">
+                <div className="pointer-events-none fixed bottom-20 right-6 z-[9999] flex flex-col gap-2">
                     {toasts.map((toast) => (
                         <div
                             key={toast.id}
@@ -2188,6 +2446,347 @@ export function ArchitectureCanvas() {
                                 </button>
                                 <button onClick={downloadNotesJson} className="neo-button flex items-center gap-2 bg-white border-[3px] border-[#161616] px-4 py-2 text-xs font-black uppercase shadow-[2px_2px_0_#161616] hover:bg-[#a18cff]">
                                     <Download size={16} strokeWidth={3}/> Download .JSON
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <AiPromptModal
+                    isOpen={isAiModalOpen}
+                    onClose={() => {
+                        setIsAiModalOpen(false);
+                        cancelGeneration();
+                        clearError();
+                    }}
+                    onCancel={cancelGeneration}
+                    isGenerating={isGenerating}
+                    progress={progress}
+                    error={aiError}
+                    onGenerate={async (prompt) => {
+                        try {
+                            const result = await generate(prompt, technologies);
+                            if (result) {
+                                setNodes(result.nodes);
+                                setEdges(result.edges);
+                                resetToolsState();
+                                resetSimulationState();
+                                window.setTimeout(() => {
+                                    if (flowInstance) {
+                                        flowInstance.fitView({ padding: 0.2, duration: 800 });
+                                    }
+                                }, 100);
+                                setIsAiModalOpen(false);
+                            }
+                        } catch (err) {
+                            // Error is handled by the hook and displayed in the modal
+                        }
+                    }}
+                />
+                {/* Auto Layout Modal */}
+                {isAutoLayoutModalOpen && (
+                    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setIsAutoLayoutModalOpen(false)}>
+                        <div className="w-full max-w-md bg-[#fffdf5] border-[3px] border-[#161616] shadow-[12px_12px_0_#161616] flex flex-col animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-between border-b-[3px] border-[#161616] p-4 bg-[#5de2e7]">
+                                <h2 className="font-black uppercase tracking-wider text-xl flex items-center gap-2"><Layout size={24} strokeWidth={3}/> Auto Layout</h2>
+                                <button onClick={() => setIsAutoLayoutModalOpen(false)} className="neo-button p-1.5 bg-white border-[2px] border-[#161616] hover:-translate-y-1 hover:translate-x-1 hover:shadow-none shadow-[2px_2px_0_#161616]" title="Close"><X size={18} strokeWidth={3} /></button>
+                            </div>
+                            <div className="p-6 flex flex-col gap-6">
+                                <div className="flex flex-col gap-1">
+                                    <h3 className="font-black uppercase text-lg">Flow Direction</h3>
+                                    <p className="text-sm font-bold text-gray-600">Choose how the algorithm should align your nodes.</p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {(['LR', 'TB', 'RL', 'BT'] as const).map((dir) => {
+                                        const isSelected = layoutDirection === dir;
+                                        const Icon = dir === 'LR' ? ArrowRight : dir === 'RL' ? ArrowLeft : dir === 'TB' ? ArrowDown : ArrowUp;
+                                        const label = dir === 'LR' ? 'Left to Right' : dir === 'RL' ? 'Right to Left' : dir === 'TB' ? 'Top to Bottom' : 'Bottom to Top';
+                                        
+                                        return (
+                                            <button
+                                                key={dir}
+                                                onClick={() => setLayoutDirection(dir)}
+                                                className={`neo-button flex flex-col items-center justify-center gap-3 border-[3px] border-[#161616] p-4 transition-all ${
+                                                    isSelected 
+                                                    ? 'bg-[#ffde59] shadow-[2px_2px_0_#161616] translate-y-[2px] translate-x-[2px]' 
+                                                    : 'bg-white shadow-[6px_6px_0_#161616] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[4px_4px_0_#161616]'
+                                                }`}
+                                            >
+                                                <div className={`p-2 border-[2px] border-[#161616] rounded-sm ${isSelected ? 'bg-white' : 'bg-gray-100'}`}>
+                                                    <Icon size={24} strokeWidth={3} />
+                                                </div>
+                                                <span className="font-black uppercase text-sm tracking-wide text-center leading-tight">{label}</span>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                            <div className="border-t-[3px] border-[#161616] p-4 bg-gray-50 flex justify-between items-center">
+                                <button onClick={() => setIsAutoLayoutModalOpen(false)} className="neo-button px-5 py-2.5 font-black uppercase bg-white border-[3px] border-[#161616] shadow-[3px_3px_0_#161616] hover:translate-y-[1px] hover:translate-x-[1px] hover:shadow-[2px_2px_0_#161616]">Cancel</button>
+                                <button 
+                                    onClick={() => {
+                                        handleAutoLayout(layoutDirection);
+                                        setIsAutoLayoutModalOpen(false);
+                                    }} 
+                                    className="neo-button flex items-center gap-2 px-6 py-2.5 font-black uppercase bg-[#ff4fa3] text-white border-[3px] border-[#161616] shadow-[4px_4px_0_#161616] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0_#161616]"
+                                >
+                                    <Layout size={18} strokeWidth={3} /> Apply Layout
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                
+                <SecurityReviewModal
+                    isOpen={isSecurityReviewModalOpen}
+                    onClose={() => {
+                        setIsSecurityReviewModalOpen(false);
+                        cancelReview();
+                    }}
+                    onRunAnalysis={async () => {
+                        const results = await runReview(nodes, edges);
+                        if (results) {
+                            setSecurityReviewResults(results);
+                        }
+                    }}
+                    onCancel={cancelReview}
+                    onDownload={handleDownloadSecurityReport}
+                    onClear={() => setSecurityReviewResults(null)}
+                    isAnalyzing={isAnalyzing}
+                    results={securityReviewResults}
+                    error={securityError}
+                    onAutoResolve={(id, issue) => {
+                        resolveIssue(id, issue, (explanation) => {
+                            clearWarnings();
+                            resetSimulationState();
+                            setResolveSuccessMessage(explanation);
+                            setSecurityReviewResults(prev => prev ? {
+                                ...prev,
+                                vulnerabilities: prev.vulnerabilities.filter(v => v.id !== id)
+                            } : null);
+                        });
+                    }}
+                    isResolving={isResolving}
+                />
+                
+                <FeedbackModal 
+                    isOpen={isFeedbackOpen} 
+                    onClose={() => setIsFeedbackOpen(false)} 
+                />
+                
+                <LogicTestModal
+                    isOpen={isLogicTestModalOpen}
+                    onClose={() => {
+                        setIsLogicTestModalOpen(false);
+                        setHighlightedErrorNodeIds([]);
+                        setHighlightedErrorEdgeIds([]);
+                        cancelTest();
+                    }}
+                    onRunTest={async () => {
+                        setHighlightedErrorNodeIds([]);
+                        setHighlightedErrorEdgeIds([]);
+                        const results = await runTest(nodes, edges);
+                        if (results) {
+                            setLogicTestResults(results);
+                        }
+                    }}
+                    onCancel={cancelTest}
+                    onClear={() => {
+                        setLogicTestResults(null);
+                        setHighlightedErrorNodeIds([]);
+                        setHighlightedErrorEdgeIds([]);
+                    }}
+                    onDownload={() => {
+                        if (!logicTestResults) return;
+                        
+                        let markdown = `# AI Logic & Reliability Report\n\n`;
+                        markdown += `**Status:** ${logicTestResults.assertions.some((a: any) => a.status === 'error') ? "ERRORS FOUND" : "PASSED"}\n\n`;
+                        markdown += `${logicTestResults.summary}\n\n## Findings\n\n`;
+                        
+                        logicTestResults.assertions.forEach((a: any) => {
+                            markdown += `### [${a.status.toUpperCase()}] ${a.title}\n`;
+                            markdown += `**Category:** ${a.category}\n\n`;
+                            markdown += `${a.description}\n\n`;
+                            if (a.remediation) {
+                                markdown += `**Remediation:** ${a.remediation}\n\n`;
+                            }
+                            markdown += `---\n\n`;
+                        });
+                        
+                        const blob = new Blob([markdown], { type: 'text/markdown' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `logic-reliability-report.md`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }}
+                    onHighlightNodes={(nIds, eIds) => {
+                        setHighlightedErrorNodeIds(nIds);
+                        setHighlightedErrorEdgeIds(eIds);
+                        setIsLogicTestModalOpen(false);
+                        
+                        // Focus canvas on the nodes
+                        if (flowInstance && nIds.length > 0) {
+                            const nodesToFocus = nodes.filter(n => nIds.includes(n.id));
+                            if (nodesToFocus.length > 0) {
+                                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                                nodesToFocus.forEach(n => {
+                                    if (n.position.x < minX) minX = n.position.x;
+                                    if (n.position.y < minY) minY = n.position.y;
+                                    if (n.position.x + 150 > maxX) maxX = n.position.x + 150;
+                                    if (n.position.y + 50 > maxY) maxY = n.position.y + 50;
+                                });
+                                flowInstance.fitBounds({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, { padding: 0.5, duration: 800 });
+                            }
+                        }
+
+                        // Remove the highlight after 5 seconds
+                        setTimeout(() => {
+                            setHighlightedErrorNodeIds([]);
+                            setHighlightedErrorEdgeIds([]);
+                        }, 5000);
+                    }}
+                    isTesting={isTesting}
+                    results={logicTestResults}
+                    error={logicTestError}
+                    nodes={nodes as ArchitectureFlowNode[]}
+                    edges={edges}
+                    onAutoResolve={(id, issue) => {
+                        resolveIssue(id, issue, (explanation) => {
+                            clearWarnings();
+                            resetSimulationState();
+                            setResolveSuccessMessage(explanation);
+                            setLogicTestResults((prev: AiLogicTestResult | null) => prev ? {
+                                ...prev,
+                                assertions: prev.assertions.filter((a: any) => a.id !== id)
+                            } : null);
+                        });
+                    }}
+                    isResolving={isResolving}
+                />
+
+                {/* Warnings Drawer Trigger */}
+                <div className="absolute bottom-6 right-6 z-50 flex items-end justify-end">
+                    <div className="relative group">
+                        <button
+                            className={`neo-button w-14 h-14 rounded-full flex items-center justify-center border-[3px] border-[#161616] shadow-[4px_4px_0_#161616] transition-transform hover:-translate-y-1 ${systemWarnings.length > 0 ? 'bg-[#ffde59] animate-pulse' : 'bg-white'}`}
+                            onClick={() => setIsWarningsPanelOpen(!isWarningsPanelOpen)}
+                            title="System Diagnostics"
+                        >
+                            <AlertTriangle className={`w-7 h-7 ${systemWarnings.length > 0 ? 'text-[#ff6b6b]' : 'text-[#161616]'}`} />
+                            {systemWarnings.length > 0 && (
+                                <span className="absolute -top-2 -right-2 bg-[#ff4fa3] text-white text-xs font-black px-2 py-0.5 rounded-full border-[2px] border-[#161616]">
+                                    {systemWarnings.length}
+                                </span>
+                            )}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Warnings Drawer */}
+                {isWarningsPanelOpen && (
+                    <div className="absolute right-6 bottom-24 z-50 w-80 max-h-[400px] flex flex-col bg-white border-[3px] border-[#161616] shadow-[8px_8px_0_#161616]">
+                        <div className="flex items-center justify-between p-3 border-b-[3px] border-[#161616] bg-[#ffde59]">
+                            <div className="flex items-center gap-2">
+                                <AlertTriangle className="w-5 h-5 text-[#161616]" />
+                                <h3 className="font-black text-sm uppercase">System Warnings</h3>
+                            </div>
+                            <button
+                                onClick={() => setIsWarningsPanelOpen(false)}
+                                className="p-1 hover:bg-black/10 rounded-sm transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+                            {systemWarnings.length === 0 ? (
+                                <div className="text-center p-4 text-gray-500 font-bold text-sm">
+                                    No warnings right now! System is running smoothly.
+                                </div>
+                            ) : (
+                                systemWarnings.map((warning) => (
+                                    <div key={warning.id} className="border-[2px] border-[#161616] p-2 bg-white relative">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-[10px] font-black uppercase bg-[#ff6b6b] text-white px-1 py-0.5 inline-block">
+                                                {warning.type}
+                                            </span>
+                                            <span className="text-[10px] text-gray-500 font-bold">
+                                                {warning.timestamp.toLocaleTimeString()}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs font-bold mt-1 text-gray-700">
+                                            {warning.message}
+                                        </p>
+                                        <button 
+                                            className="mt-2 text-[10px] font-black uppercase bg-[#5de2e7] border-2 border-[#161616] px-2 py-1 flex items-center justify-center gap-1 hover:bg-[#9cf57a] w-full"
+                                            onClick={() => {
+                                                resolveIssue(warning.id, warning.message, (explanation) => {
+                                                    clearWarnings();
+                                                    resetSimulationState();
+                                                    setResolveSuccessMessage(explanation);
+                                                });
+                                            }}
+                                            disabled={isResolving === warning.id}
+                                        >
+                                            {isResolving === warning.id ? (
+                                                <Loader2 size={12} strokeWidth={3} className="animate-spin" />
+                                            ) : (
+                                                "✨ Auto Resolve"
+                                            )}
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        
+                        {systemWarnings.length > 0 && (
+                            <div className="p-3 border-t-[3px] border-[#161616] bg-gray-50 flex justify-end">
+                                <button
+                                    onClick={() => {
+                                        setSystemWarnings([]);
+                                        clearWarnings();
+                                    }}
+                                    className="text-xs font-black uppercase bg-white border-[2px] border-[#161616] px-3 py-1 shadow-[2px_2px_0_#161616] hover:-translate-y-0.5 transition-transform active:translate-y-0 active:shadow-none"
+                                >
+                                    Clear All
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {resolveSuccessMessage && (
+                    <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                        <div className="bg-[#fffdf5] border-[3px] border-[#161616] shadow-[8px_8px_0_#161616] max-w-md w-full flex flex-col relative animate-in fade-in zoom-in duration-200">
+                            <div className="border-b-[3px] border-[#161616] bg-[#5de2e7] px-4 py-3 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <WandSparkles className="w-5 h-5 text-[#161616]" />
+                                    <h2 className="font-black text-lg uppercase tracking-tight text-[#161616]">
+                                        Issue Resolved
+                                    </h2>
+                                </div>
+                                <button 
+                                    onClick={() => setResolveSuccessMessage(null)}
+                                    className="p-1 hover:bg-black/10 rounded-sm transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="p-5">
+                                <p className="text-sm font-bold text-gray-800 leading-relaxed">
+                                    {resolveSuccessMessage}
+                                </p>
+                            </div>
+                            <div className="border-t-[3px] border-[#161616] bg-gray-50 p-4 flex justify-end">
+                                <button
+                                    onClick={() => setResolveSuccessMessage(null)}
+                                    className="neo-button bg-[#ffde59] px-6 py-2 text-sm font-black uppercase shadow-[3px_3px_0_#161616] hover:-translate-y-0.5 transition-transform active:translate-y-0 active:shadow-none"
+                                >
+                                    Awesome
                                 </button>
                             </div>
                         </div>
