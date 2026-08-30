@@ -94,7 +94,12 @@ export async function POST(req: Request) {
     }
 
     try {
-        const body = await req.json();
+        let body;
+        try {
+            body = await req.json();
+        } catch {
+            return NextResponse.json({ error: "Request aborted or invalid JSON" }, { status: 400 });
+        }
         const { nodes, edges, warning } = body;
 
         if (!nodes || !edges || !warning) {

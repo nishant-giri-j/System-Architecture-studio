@@ -277,7 +277,7 @@ export function ArchitectureCanvas() {
     // AI Architect
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
     const { generate, cancelGeneration, isGenerating, progress, error: aiError, clearError } = useAiArchitect();
-    const { resolveIssue, isResolving, cancelResolution } = useAutoResolve(nodes as ArchitectureFlowNode[], edges, setNodes, setEdges);
+    const { resolveIssue, isResolving, cancelResolve } = useAutoResolve(nodes as ArchitectureFlowNode[], edges, setNodes, setEdges);
     const [resolveSuccessMessage, setResolveSuccessMessage] = useState<string | null>(null);
     
     // Security Review
@@ -2655,8 +2655,8 @@ export function ArchitectureCanvas() {
                             } : null);
                         });
                     }}
-                    onCancelAutoResolve={cancelResolution}
                     isResolving={isResolving}
+                    onCancelResolve={cancelResolve}
                 />
                 
                 <FeedbackModal 
@@ -2755,8 +2755,8 @@ export function ArchitectureCanvas() {
                             } : null);
                         });
                     }}
-                    onCancelAutoResolve={cancelResolution}
                     isResolving={isResolving}
+                    onCancelResolve={cancelResolve}
                 />
 
                 {/* Warnings Drawer Trigger */}
@@ -2814,31 +2814,32 @@ export function ArchitectureCanvas() {
                                         <p className="text-xs font-bold mt-1 text-gray-700">
                                             {warning.message}
                                         </p>
-                                        <div className="flex gap-1 mt-2">
+                                        <button 
+                                            className="mt-2 text-[10px] font-black uppercase bg-[#5de2e7] border-2 border-[#161616] px-2 py-1 flex items-center justify-center gap-1 hover:bg-[#9cf57a] w-full"
+                                            onClick={() => {
+                                                resolveIssue(warning.id, warning.message, warning.nodeId, (explanation) => {
+                                                    clearWarnings(); // Clears the ref so it can trigger again if the fix was bad
+                                                    setSystemWarnings(prev => prev.filter(w => w.id !== warning.id)); // Actually remove it from the UI
+                                                    resetSimulationState();
+                                                    setResolveSuccessMessage(explanation);
+                                                });
+                                            }}
+                                            disabled={!!isResolving}
+                                        >
                                             {isResolving === warning.id ? (
-                                                <button 
-                                                    className="flex-1 text-[10px] font-black uppercase bg-[#ff6b6b] text-white border-2 border-[#161616] px-2 py-1 flex items-center justify-center gap-1 hover:bg-red-600"
-                                                    onClick={() => cancelResolution()}
-                                                >
-                                                    <X size={12} strokeWidth={3} /> Cancel
-                                                </button>
+                                                <Loader2 size={12} strokeWidth={3} className="animate-spin" />
                                             ) : (
-                                                <button 
-                                                    className="flex-1 text-[10px] font-black uppercase bg-[#5de2e7] border-2 border-[#161616] px-2 py-1 flex items-center justify-center gap-1 hover:bg-[#9cf57a]"
-                                                    onClick={() => {
-                                                        resolveIssue(warning.id, warning.message, warning.nodeId, (explanation) => {
-                                                            clearWarnings(); 
-                                                            setSystemWarnings(prev => prev.filter(w => w.id !== warning.id)); 
-                                                            resetSimulationState();
-                                                            setResolveSuccessMessage(explanation);
-                                                        });
-                                                    }}
-                                                    disabled={isResolving !== null}
-                                                >
-                                                    ✨ Auto Resolve
-                                                </button>
+                                                "✨ Auto Resolve"
                                             )}
-                                        </div>
+                                        </button>
+                                        {isResolving === warning.id && (
+                                            <button
+                                                className="mt-1 text-[10px] font-black uppercase bg-[#ff6b6b] text-white border-2 border-[#161616] px-2 py-1 flex items-center justify-center gap-1 hover:bg-[#ff4f4f] w-full"
+                                                onClick={(e) => { e.stopPropagation(); cancelResolve(); }}
+                                            >
+                                                ✕ Cancel
+                                            </button>
+                                        )}
                                     </div>
                                 ))
                             )}
