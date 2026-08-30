@@ -35,7 +35,7 @@ export function EdgePropertiesPanel({ edge, onSave, onDelete, onClose, onShowPro
   return (
     <>
       <div 
-        className="absolute inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm"
+        className="fixed inset-0 z-[99998] flex items-center justify-center bg-black/20 backdrop-blur-sm"
         onPointerDown={onClose}
       >
         <div 

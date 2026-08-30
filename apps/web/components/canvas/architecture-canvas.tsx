@@ -277,7 +277,7 @@ export function ArchitectureCanvas() {
     // AI Architect
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
     const { generate, cancelGeneration, isGenerating, progress, error: aiError, clearError } = useAiArchitect();
-    const { resolveIssue, isResolving } = useAutoResolve(nodes as ArchitectureFlowNode[], edges, setNodes, setEdges);
+    const { resolveIssue, isResolving, cancelResolution } = useAutoResolve(nodes as ArchitectureFlowNode[], edges, setNodes, setEdges);
     const [resolveSuccessMessage, setResolveSuccessMessage] = useState<string | null>(null);
     
     // Security Review
@@ -2655,6 +2655,7 @@ export function ArchitectureCanvas() {
                             } : null);
                         });
                     }}
+                    onCancelAutoResolve={cancelResolution}
                     isResolving={isResolving}
                 />
                 
@@ -2754,6 +2755,7 @@ export function ArchitectureCanvas() {
                             } : null);
                         });
                     }}
+                    onCancelAutoResolve={cancelResolution}
                     isResolving={isResolving}
                 />
 
@@ -2812,24 +2814,31 @@ export function ArchitectureCanvas() {
                                         <p className="text-xs font-bold mt-1 text-gray-700">
                                             {warning.message}
                                         </p>
-                                        <button 
-                                            className="mt-2 text-[10px] font-black uppercase bg-[#5de2e7] border-2 border-[#161616] px-2 py-1 flex items-center justify-center gap-1 hover:bg-[#9cf57a] w-full"
-                                            onClick={() => {
-                                                resolveIssue(warning.id, warning.message, warning.nodeId, (explanation) => {
-                                                    clearWarnings(); // Clears the ref so it can trigger again if the fix was bad
-                                                    setSystemWarnings(prev => prev.filter(w => w.id !== warning.id)); // Actually remove it from the UI
-                                                    resetSimulationState();
-                                                    setResolveSuccessMessage(explanation);
-                                                });
-                                            }}
-                                            disabled={isResolving === warning.id}
-                                        >
+                                        <div className="flex gap-1 mt-2">
                                             {isResolving === warning.id ? (
-                                                <Loader2 size={12} strokeWidth={3} className="animate-spin" />
+                                                <button 
+                                                    className="flex-1 text-[10px] font-black uppercase bg-[#ff6b6b] text-white border-2 border-[#161616] px-2 py-1 flex items-center justify-center gap-1 hover:bg-red-600"
+                                                    onClick={() => cancelResolution()}
+                                                >
+                                                    <X size={12} strokeWidth={3} /> Cancel
+                                                </button>
                                             ) : (
-                                                "✨ Auto Resolve"
+                                                <button 
+                                                    className="flex-1 text-[10px] font-black uppercase bg-[#5de2e7] border-2 border-[#161616] px-2 py-1 flex items-center justify-center gap-1 hover:bg-[#9cf57a]"
+                                                    onClick={() => {
+                                                        resolveIssue(warning.id, warning.message, warning.nodeId, (explanation) => {
+                                                            clearWarnings(); 
+                                                            setSystemWarnings(prev => prev.filter(w => w.id !== warning.id)); 
+                                                            resetSimulationState();
+                                                            setResolveSuccessMessage(explanation);
+                                                        });
+                                                    }}
+                                                    disabled={isResolving !== null}
+                                                >
+                                                    ✨ Auto Resolve
+                                                </button>
                                             )}
-                                        </button>
+                                        </div>
                                     </div>
                                 ))
                             )}
@@ -2853,7 +2862,7 @@ export function ArchitectureCanvas() {
                 )}
 
                 {resolveSuccessMessage && (
-                    <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
                         <div className="bg-[#fffdf5] border-[3px] border-[#161616] shadow-[8px_8px_0_#161616] max-w-md w-full flex flex-col relative animate-in fade-in zoom-in duration-200">
                             <div className="border-b-[3px] border-[#161616] bg-[#5de2e7] px-4 py-3 flex items-center justify-between">
                                 <div className="flex items-center gap-1.5">

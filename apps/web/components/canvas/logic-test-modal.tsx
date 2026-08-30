@@ -27,6 +27,7 @@ interface LogicTestModalProps {
     onHighlightNodes: (nodeIds: string[], edgeIds: string[]) => void;
     onClear?: () => void;
     onAutoResolve?: (id: string, issueText: string) => void;
+    onCancelAutoResolve?: () => void;
     isResolving?: string | null;
     isTesting: boolean;
     results: AiLogicTestResult | null;
@@ -361,20 +362,30 @@ export function LogicTestModal({
                                                 </div>
                                             )}
                                             {onAutoResolve && assertion.status !== 'pass' && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation(); // prevent highlighting nodes when clicking button
-                                                        onAutoResolve(assertion.id, `${assertion.title}: ${assertion.description} Fix: ${assertion.remediation}`);
-                                                    }}
-                                                    disabled={isResolving === assertion.id}
-                                                    className="mt-3 neo-button w-full flex items-center justify-center gap-2 bg-[#5de2e7] px-4 py-2 text-sm font-black uppercase shadow-[2px_2px_0_#161616] hover:translate-y-[1px] hover:translate-x-[1px] hover:shadow-[1px_1px_0_#161616]"
-                                                >
+                                                <div className="mt-3 flex gap-2">
                                                     {isResolving === assertion.id ? (
-                                                        <Loader2 size={16} strokeWidth={3} className="animate-spin" />
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (onCancelAutoResolve) onCancelAutoResolve();
+                                                            }}
+                                                            className="neo-button flex-1 flex items-center justify-center gap-2 bg-[#ff6b6b] text-white px-4 py-2 text-sm font-black uppercase shadow-[2px_2px_0_#161616] hover:translate-y-[1px] hover:translate-x-[1px] hover:shadow-[1px_1px_0_#161616]"
+                                                        >
+                                                            <X size={16} strokeWidth={3} /> Cancel
+                                                        </button>
                                                     ) : (
-                                                        "✨ Auto Resolve"
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                onAutoResolve(assertion.id, `${assertion.title}: ${assertion.description} Fix: ${assertion.remediation}`);
+                                                            }}
+                                                            disabled={isResolving !== null}
+                                                            className="neo-button flex-1 flex items-center justify-center gap-2 bg-[#5de2e7] px-4 py-2 text-sm font-black uppercase shadow-[2px_2px_0_#161616] hover:translate-y-[1px] hover:translate-x-[1px] hover:shadow-[1px_1px_0_#161616]"
+                                                        >
+                                                            ✨ Auto Resolve
+                                                        </button>
                                                     )}
-                                                </button>
+                                                </div>
                                             )}
                                         </div>
                                     </div>

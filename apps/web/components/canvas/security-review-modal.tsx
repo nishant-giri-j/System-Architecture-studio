@@ -14,14 +14,15 @@ interface SecurityReviewModalProps {
     results: AiSecurityReviewResult | null;
     error: string | null;
     onAutoResolve?: (id: string, issueText: string) => void;
+    onCancelAutoResolve?: () => void;
     isResolving?: string | null;
 }
 
 const severityColors = {
     critical: "bg-[#ff4fa3] text-white border-[#161616]", // Pink/Red
-    high: "bg-[#ff6b6b] text-white border-[#161616]", // Red
+    high: "bg-[#ffad66] text-white border-[#161616]", // Orange
     medium: "bg-[#ffde59] text-black border-[#161616]", // Yellow
-    low: "bg-[#5de2e7] text-black border-[#161616]", // Cyan
+    low: "bg-[#9cf57a] text-black border-[#161616]", // Green
 };
 
 const typeIcons = {
@@ -43,6 +44,7 @@ export function SecurityReviewModal({
     results,
     error,
     onAutoResolve,
+    onCancelAutoResolve,
     isResolving,
 }: SecurityReviewModalProps) {
     if (!isOpen) return null;
@@ -185,17 +187,24 @@ export function SecurityReviewModal({
                                                         <p className="text-sm font-bold text-gray-800">{vuln.remediation}</p>
                                                     </div>
                                                     {onAutoResolve && (
-                                                        <button
-                                                            onClick={() => onAutoResolve(vuln.id, `${vuln.title}: ${vuln.description} Fix: ${vuln.remediation}`)}
-                                                            disabled={isResolving === vuln.id}
-                                                            className="mt-3 neo-button w-full flex items-center justify-center gap-2 bg-[#5de2e7] px-4 py-2 text-sm font-black uppercase shadow-[2px_2px_0_#161616] hover:translate-y-[1px] hover:translate-x-[1px] hover:shadow-[1px_1px_0_#161616]"
-                                                        >
+                                                        <div className="mt-3 flex gap-2">
                                                             {isResolving === vuln.id ? (
-                                                                <Loader2 size={16} strokeWidth={3} className="animate-spin" />
+                                                                <button
+                                                                    onClick={() => onCancelAutoResolve && onCancelAutoResolve()}
+                                                                    className="neo-button flex-1 flex items-center justify-center gap-2 bg-[#ff6b6b] text-white px-4 py-2 text-sm font-black uppercase shadow-[2px_2px_0_#161616] hover:translate-y-[1px] hover:translate-x-[1px] hover:shadow-[1px_1px_0_#161616]"
+                                                                >
+                                                                    <X size={16} strokeWidth={3} /> Cancel
+                                                                </button>
                                                             ) : (
-                                                                "✨ Auto Resolve"
+                                                                <button
+                                                                    onClick={() => onAutoResolve(vuln.id, `${vuln.title}: ${vuln.description} Fix: ${vuln.remediation}`)}
+                                                                    disabled={isResolving !== null}
+                                                                    className="neo-button flex-1 flex items-center justify-center gap-2 bg-[#5de2e7] px-4 py-2 text-sm font-black uppercase shadow-[2px_2px_0_#161616] hover:translate-y-[1px] hover:translate-x-[1px] hover:shadow-[1px_1px_0_#161616]"
+                                                                >
+                                                                    ✨ Auto Resolve
+                                                                </button>
                                                             )}
-                                                        </button>
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
