@@ -123,6 +123,10 @@ export const protocolLibrary: ProtocolDefinition[] = [
 export function getProtocolInfo(id: string): ProtocolDefinition {
   const existing = protocolLibrary.find(p => p.id === id || p.label === id);
   if (existing) return existing;
+
+  // Check runtime-registered protocols (from AI discovery)
+  const registered = runtimeProtocols.find(p => p.id === id || p.label === id);
+  if (registered) return registered;
   
   if (generatedProtocolData[id]) {
     return {
@@ -146,4 +150,24 @@ export function getProtocolInfo(id: string): ProtocolDefinition {
     security: "Depends on transport layer security (TLS/SSL) and authentication implementation.",
     relatedProtocols: []
   };
+}
+
+// ── Runtime Protocol Registry ─────────────────────────────────
+// AI-discovered protocols are registered here at runtime.
+
+const runtimeProtocols: ProtocolDefinition[] = [];
+
+/** Register a new protocol at runtime. */
+export function registerProtocol(protocol: ProtocolDefinition): void {
+  if (
+    !protocolLibrary.some((p) => p.id === protocol.id) &&
+    !runtimeProtocols.some((p) => p.id === protocol.id)
+  ) {
+    runtimeProtocols.push(protocol);
+  }
+}
+
+/** Return all protocols (curated + generated + runtime). */
+export function getAllProtocols(): ProtocolDefinition[] {
+  return [...protocolLibrary, ...runtimeProtocols];
 }

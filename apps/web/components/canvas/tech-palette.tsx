@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useState } from "react";
+import { useContext, useState, useEffect } from "react";
 import type { TechnologyDefinition } from "@architecture-studio/shared";
 import { Database, HardDrive, MonitorSmartphone, Network, Server, Zap, ChevronDown, ChevronRight, Folder, Search, Shield, Activity, Box, Lock, SquareDashed, Info } from "lucide-react";
 import { TechContext } from "./tech-context";
@@ -23,6 +23,10 @@ const iconByCategory: Record<string, React.ComponentType<{ size?: number; stroke
 
 function CategoryFolder({ category, items, defaultOpen = false, onShowInfo }: { category: string, items: TechnologyDefinition[], defaultOpen?: boolean, onShowInfo: (tech: TechnologyDefinition) => void }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  useEffect(() => {
+    setIsOpen(defaultOpen);
+  }, [defaultOpen]);
 
   return (
     <div className="border-b-[3px] border-[#161616] last:border-b-0">

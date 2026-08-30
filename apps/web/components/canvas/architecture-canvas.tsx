@@ -64,7 +64,9 @@ import {
     ArrowRight,
     ArrowLeft,
     ArrowDown,
-    ArrowUp
+    ArrowUp,
+    ChevronDown,
+    ChevronUp
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -254,6 +256,8 @@ export function ArchitectureCanvas() {
     const [propertiesEdgeId, setPropertiesEdgeId] = useState<string>();
     const [isPlaying, setIsPlaying] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
+    const [chaosDurationSeconds, setChaosDurationSeconds] = useState(10);
+    const [chaosTargetId, setChaosTargetId] = useState<string>('random');
     const [isLogWindowOpen, setIsLogWindowOpen] = useState(false);
     const [terminalView, setTerminalView] = useState<'console' | 'trace'>(
         'trace',
@@ -335,6 +339,13 @@ export function ArchitectureCanvas() {
     // Dynamic Technology State
     const [technologies, setTechnologies] =
         useState<TechnologyDefinition[]>(technologyLibrary);
+
+    // Reset chaosTargetId if the selected node is deleted
+    useEffect(() => {
+        if (chaosTargetId !== 'random' && !nodes.some(n => n.id === chaosTargetId)) {
+            setChaosTargetId('random');
+        }
+    }, [nodes, chaosTargetId]);
 
     // Auto-fetch technologies periodically
     useEffect(() => {
@@ -442,10 +453,13 @@ export function ArchitectureCanvas() {
     }, [clearWarnings]);
 
     const startContinuousSimulation = useCallback(() => {
+        if (totalLimit < Infinity && metrics.totalRequests >= totalLimit && metrics.inFlightRequests === 0) {
+            resetSimulationState();
+        }
         setIsSingleCycle(false);
         setIsPaused(false);
         setIsPlaying(true);
-    }, []);
+    }, [metrics.totalRequests, metrics.inFlightRequests, totalLimit, resetSimulationState]);
 
     const stopSimulation = useCallback(() => {
         setIsPlaying(false);
@@ -454,14 +468,20 @@ export function ArchitectureCanvas() {
     }, []);
 
     const startSingleCycle = useCallback(() => {
+        if (totalLimit < Infinity && metrics.totalRequests >= totalLimit && metrics.inFlightRequests === 0) {
+            resetSimulationState();
+        }
         // Stop and clear any paused or active run before starting a fresh cycle.
         setIsPlaying(false);
         setIsPaused(false);
         setIsSingleCycle(false);
         window.setTimeout(() => setIsSingleCycle(true), 0);
-    }, []);
+    }, [metrics.totalRequests, metrics.inFlightRequests, totalLimit, resetSimulationState]);
 
     const stepSimulation = useCallback(() => {
+        if (totalLimit < Infinity && metrics.totalRequests >= totalLimit && metrics.inFlightRequests === 0) {
+            resetSimulationState();
+        }
         if (!isPlaying) {
             setIsSingleCycle(true);
             setIsPlaying(true);
@@ -469,7 +489,7 @@ export function ArchitectureCanvas() {
             return;
         }
         if (isPaused) stepEvent();
-    }, [isPaused, isPlaying, stepEvent]);
+    }, [isPaused, isPlaying, stepEvent, metrics.totalRequests, metrics.inFlightRequests, totalLimit, resetSimulationState]);
 
     useEffect(() => {
         setEdges((currentEdges) =>
@@ -510,6 +530,7 @@ export function ArchitectureCanvas() {
             processingDelay?: number,
             latency?: NodeLatencyConfig,
             routingStrategy?: 'broadcast' | 'load-balance',
+            disabled?: boolean,
         ) => {
             setNodes((nds) =>
                 nds.map((n) => {
@@ -526,6 +547,7 @@ export function ArchitectureCanvas() {
                                         : archNode.data.processingDelay,
                                 latency: latency ?? archNode.data.latency,
                                 routingStrategy: routingStrategy ?? archNode.data.routingStrategy,
+                                disabled: disabled !== undefined ? disabled : archNode.data.disabled,
                             },
                         } as ArchitectureFlowNode;
                     }
@@ -908,9 +930,9 @@ export function ArchitectureCanvas() {
                         </div>
 
                         {/* AI Tools */}
-                        <div className="relative shrink-0 z-[100]">
+                        <div className={`relative shrink-0 ${isAiToolsDropdownOpen ? 'z-[90010]' : 'z-50'}`}>
                             <button
-                                className="neo-button flex items-center gap-2 bg-[#ffde59] px-4 py-2 border-[3px] border-[#161616] shadow-[3px_3px_0_#161616] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[1px_1px_0_#161616] transition-all"
+                                className="neo-button flex items-center gap-1.5 bg-[#ffde59] px-4 py-2 border-[3px] border-[#161616] shadow-[3px_3px_0_#161616] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[1px_1px_0_#161616] transition-all"
                                 onClick={() => setIsAiToolsDropdownOpen(!isAiToolsDropdownOpen)}
                                 type="button"
                                 title="Open AI Tools"
@@ -928,7 +950,7 @@ export function ArchitectureCanvas() {
                                     />
                                     <div className="absolute right-0 top-full mt-3 flex w-[550px] flex-col border-[3px] border-[#161616] bg-[#fffdf5] shadow-[8px_8px_0_#161616] z-[10006] animate-in fade-in slide-in-from-top-2 origin-top-right">
                                         <div className="bg-[#ff4fa3] px-4 py-3 border-b-[3px] border-[#161616] flex justify-between items-center">
-                                            <div className="flex items-center gap-2 text-white">
+                                            <div className="flex items-center gap-1.5 text-white">
                                                 <WandSparkles size={18} strokeWidth={3} />
                                                 <span className="font-black uppercase tracking-wider text-sm">Magic AI Tools</span>
                                             </div>
@@ -941,7 +963,7 @@ export function ArchitectureCanvas() {
                                             {/* AI Architect */}
                                             <div className="border-[3px] border-[#161616] p-4 bg-white shadow-[4px_4px_0_#161616] flex flex-col justify-between">
                                                 <div>
-                                                    <div className="flex items-center gap-2 mb-2">
+                                                    <div className="flex items-center gap-1.5 mb-2">
                                                         <div className="bg-[#ff4fa3] p-1.5 border-[2px] border-[#161616] text-white shrink-0">
                                                             <WandSparkles size={16} strokeWidth={3} />
                                                         </div>
@@ -950,7 +972,7 @@ export function ArchitectureCanvas() {
                                                     <p className="text-xs text-gray-600 font-medium mb-4">Prompt-to-Architecture. Describe your system and let AI build it.</p>
                                                 </div>
                                                 <button
-                                                    className="neo-button w-full bg-[#161616] text-white px-3 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
+                                                    className="neo-button w-full bg-[#161616] text-white px-2 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
                                                     onClick={() => {
                                                         setIsAiModalOpen(true);
                                                         setIsAiToolsDropdownOpen(false);
@@ -963,7 +985,7 @@ export function ArchitectureCanvas() {
                                             {/* Auto-Layout */}
                                             <div className="border-[3px] border-[#161616] p-4 bg-white shadow-[4px_4px_0_#161616] flex flex-col justify-between">
                                                 <div>
-                                                    <div className="flex items-center gap-2 mb-2">
+                                                    <div className="flex items-center gap-1.5 mb-2">
                                                         <div className="bg-[#5de2e7] p-1.5 border-[2px] border-[#161616] shrink-0">
                                                             <Layout size={16} strokeWidth={3} />
                                                         </div>
@@ -972,7 +994,7 @@ export function ArchitectureCanvas() {
                                                     <p className="text-xs text-gray-600 font-medium mb-4">Automatically arrange your nodes and wires into a clean flow.</p>
                                                 </div>
                                                 <button
-                                                    className="neo-button w-full bg-[#161616] text-white px-3 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
+                                                    className="neo-button w-full bg-[#161616] text-white px-2 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
                                                     onClick={() => {
                                                         setIsAutoLayoutModalOpen(true);
                                                         setIsAiToolsDropdownOpen(false);
@@ -985,7 +1007,7 @@ export function ArchitectureCanvas() {
                                             {/* Security Review */}
                                             <div className="border-[3px] border-[#161616] p-4 bg-white shadow-[4px_4px_0_#161616] flex flex-col justify-between">
                                                 <div>
-                                                    <div className="flex items-center gap-2 mb-2">
+                                                    <div className="flex items-center gap-1.5 mb-2">
                                                         <div className="bg-[#ff6b6b] p-1.5 border-[2px] border-[#161616] text-white shrink-0">
                                                             <ShieldAlert size={16} strokeWidth={3} />
                                                         </div>
@@ -994,7 +1016,7 @@ export function ArchitectureCanvas() {
                                                     <p className="text-xs text-gray-600 font-medium mb-4">Scan for vulnerabilities, bottlenecks, and single points of failure.</p>
                                                 </div>
                                                 <button
-                                                    className="neo-button w-full bg-[#161616] text-white px-3 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
+                                                    className="neo-button w-full bg-[#161616] text-white px-2 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
                                                     onClick={() => {
                                                         setIsSecurityReviewModalOpen(true);
                                                         setIsAiToolsDropdownOpen(false);
@@ -1007,7 +1029,7 @@ export function ArchitectureCanvas() {
                                             {/* Logic Tester */}
                                             <div className="border-[3px] border-[#161616] p-4 bg-white shadow-[4px_4px_0_#161616] flex flex-col justify-between">
                                                 <div>
-                                                    <div className="flex items-center gap-2 mb-2">
+                                                    <div className="flex items-center gap-1.5 mb-2">
                                                         <div className="bg-[#ffde59] p-1.5 border-[2px] border-[#161616] shrink-0">
                                                             <TestTube size={16} strokeWidth={3} />
                                                         </div>
@@ -1016,7 +1038,7 @@ export function ArchitectureCanvas() {
                                                     <p className="text-xs text-gray-600 font-medium mb-4">Check for infinite loops, missing fallbacks, and queue errors.</p>
                                                 </div>
                                                 <button
-                                                    className="neo-button w-full bg-[#161616] text-white px-3 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
+                                                    className="neo-button w-full bg-[#161616] text-white px-2 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
                                                     onClick={() => {
                                                         setIsLogicTestModalOpen(true);
                                                         setIsAiToolsDropdownOpen(false);
@@ -1033,10 +1055,10 @@ export function ArchitectureCanvas() {
                     </div>
 
                     <div className="flex w-full flex-col lg:flex-row items-start lg:items-center justify-between border-t-[3px] border-[#161616] pt-3 gap-3 lg:gap-0">
-                        <div className="flex flex-wrap items-center gap-3 lg:gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5 lg:gap-1">
 
                         <button
-                            className="header-control neo-button flex shrink-0 items-center gap-2 bg-white px-3"
+                            className="header-control neo-button flex shrink-0 items-center gap-1.5 bg-white px-2"
                             onClick={startSingleCycle}
                             type="button"
                             title="Run one request cycle"
@@ -1047,7 +1069,7 @@ export function ArchitectureCanvas() {
 
                         <div className="flex h-12 shrink-0 border-[3px] border-[#161616] bg-[#161616] shadow-[3px_3px_0_#161616]">
                             <button
-                                className={`flex items-center gap-2 px-3 text-sm font-black uppercase transition-colors ${isPlaying ? 'bg-[#9cf57a]' : 'bg-[#fffdf5] hover:bg-[#5de2e7]'}`}
+                                className={`flex items-center gap-1.5 px-2 text-sm font-black uppercase transition-colors ${isPlaying ? 'bg-[#9cf57a]' : 'bg-[#fffdf5] hover:bg-[#5de2e7]'}`}
                                 onClick={() => {
                                     startContinuousSimulation();
                                 }}
@@ -1063,7 +1085,7 @@ export function ArchitectureCanvas() {
                             </button>
                             <div className="w-[3px] bg-[#161616]"></div>
                             <button
-                                className={`flex items-center gap-2 px-3 text-sm font-black uppercase transition-colors disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:opacity-100 ${isPaused ? 'bg-[#ffde59]' : 'bg-[#fffdf5] hover:bg-[#ffde59]'}`}
+                                className={`flex items-center gap-1.5 px-2 text-sm font-black uppercase transition-colors disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:opacity-100 ${isPaused ? 'bg-[#ffde59]' : 'bg-[#fffdf5] hover:bg-[#ffde59]'}`}
                                 onClick={() => {
                                     if (isPlaying) setIsPaused(true);
                                 }}
@@ -1080,7 +1102,7 @@ export function ArchitectureCanvas() {
                             </button>
                         </div>
 
-                        <label className="header-control neo-control flex shrink-0 items-center gap-2 bg-[#f0f0f0] px-3" title="Playback speed">
+                        <label className="header-control neo-control flex shrink-0 items-center gap-1.5 bg-[#f0f0f0] px-2" title="Playback speed">
                             <span className="font-black text-gray-700 text-[10px] uppercase">Speed</span>
                             <select
                                 className="h-7 bg-white border-[2px] border-[#161616] px-1 text-xs font-black shadow-[2px_2px_0_#161616] outline-none cursor-pointer hover:bg-gray-50 transition-colors"
@@ -1098,7 +1120,7 @@ export function ArchitectureCanvas() {
                             </select>
                         </label>
 
-                        <label className="header-control neo-control flex shrink-0 items-center gap-2 bg-[#f0f0f0] px-3" title="Requests per second">
+                        <label className="header-control neo-control flex shrink-0 items-center gap-1.5 bg-[#f0f0f0] px-2" title="Requests per second">
                             <span className="font-black text-gray-700 text-[10px] uppercase">RPS</span>
                             <input
                                 className="w-16 h-7 bg-white border-[2px] border-[#161616] px-1 text-xs font-black shadow-[2px_2px_0_#161616] outline-none hover:bg-gray-50 transition-colors"
@@ -1122,7 +1144,7 @@ export function ArchitectureCanvas() {
                             />
                         </label>
 
-                        <label className="header-control neo-control flex shrink-0 items-center gap-2 bg-[#f0f0f0] px-3" title="Max concurrent packets allowed in flight">
+                        <label className="header-control neo-control flex shrink-0 items-center gap-1.5 bg-[#f0f0f0] px-2" title="Max concurrent packets allowed in flight">
                             <span className="font-black text-gray-700 text-[10px] uppercase">Max Active</span>
                             <input
                                 className="w-16 h-7 bg-white border-[2px] border-[#161616] px-1 text-xs font-black shadow-[2px_2px_0_#161616] outline-none hover:bg-gray-50 transition-colors"
@@ -1140,7 +1162,7 @@ export function ArchitectureCanvas() {
                             />
                         </label>
 
-                        <label className="header-control neo-control flex shrink-0 items-center gap-2 bg-[#f0f0f0] px-3" title="Absolute total packets to send before stopping">
+                        <label className="header-control neo-control flex shrink-0 items-center gap-1.5 bg-[#f0f0f0] px-2" title="Absolute total packets to send before stopping">
                             <span className="font-black text-gray-700 text-[10px] uppercase">Limit</span>
                             <input
                                 className="w-16 h-7 bg-white border-[2px] border-[#161616] px-1 text-xs font-black shadow-[2px_2px_0_#161616] outline-none hover:bg-gray-50 transition-colors"
@@ -1157,19 +1179,64 @@ export function ArchitectureCanvas() {
                             />
                         </label>
 
-                        <button
-                            className="header-control neo-button flex shrink-0 items-center gap-2 bg-[#ff6b6b] px-3 disabled:!bg-gray-200 disabled:!text-gray-400 disabled:!border-gray-400 disabled:shadow-none disabled:translate-y-[3px] disabled:translate-x-[3px] disabled:cursor-not-allowed"
-                            onClick={triggerChaosMonkey}
-                            type="button"
-                            title="Trigger a massive latency spike on a random backend node!"
-                            disabled={!isPlaying && !isPaused}
-                        >
-                            <span className="hidden sm:inline">🐒</span>
-                            <span className="hidden sm:inline font-black text-xs uppercase text-white">Chaos</span>
-                        </button>
+                        <div className="header-control flex shrink-0 items-stretch border-[3px] border-[#161616] shadow-[3px_3px_0_#161616] transition-all hover:translate-y-[-1px] hover:translate-x-[-1px] hover:shadow-[5px_5px_0_#161616]">
+                            <div className="flex items-center border-r-[3px] border-[#161616] bg-[#ffde59] transition-colors relative" title="Select Chaos Target">
+                                <select
+                                    className="appearance-none bg-transparent font-black text-[10px] text-[#161616] pl-2 pr-5 py-1 outline-none cursor-pointer w-[90px] truncate"
+                                    value={chaosTargetId}
+                                    onChange={(e) => setChaosTargetId(e.target.value)}
+                                >
+                                    <option value="random">🎯 RANDOM</option>
+                                    {nodes.filter(n => n.type === 'architecture' && technologies.find(t => t.id === (n.data as any).technologyId)?.category !== 'client').map(n => (
+                                        <option key={n.id} value={n.id}>{(n.data as any).label || 'Unnamed Node'}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={14} strokeWidth={4} className="absolute right-1 text-[#161616] pointer-events-none" />
+                            </div>
+                            <button
+                                className={`flex items-center gap-1.5 px-2 transition-colors bg-[#ff6b6b] text-white hover:bg-[#ff5252] active:bg-[#e04848] ${(!isPlaying && !isPaused) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                onClick={() => triggerChaosMonkey(chaosDurationSeconds * 1000, chaosTargetId)}
+                                type="button"
+                                title={`Take ${chaosTargetId === 'random' ? 'a random' : 'the selected'} backend node OFFLINE for ${chaosDurationSeconds} seconds!`}
+                                disabled={!isPlaying && !isPaused}
+                            >
+                                <span className="hidden sm:inline text-base">🐒</span>
+                                <span className="hidden sm:inline font-black text-xs uppercase">Chaos</span>
+                            </button>
+                            
+                            <div className="flex items-stretch border-l-[3px] border-[#161616] bg-[#ff4fa3]">
+                                <div className="flex items-center justify-center pl-2 pr-1" title="Set exact chaos duration in seconds">
+                                    <input
+                                        className="bg-transparent font-black text-xs text-white text-center w-6 outline-none m-0 p-0 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                        type="number"
+                                        min="1"
+                                        max="600"
+                                        value={chaosDurationSeconds}
+                                        onChange={(e) => setChaosDurationSeconds(Math.max(1, Number(e.target.value)))}
+                                    />
+                                    <span className="font-black text-xs text-white pointer-events-none pr-1">s</span>
+                                </div>
+                                <div className="flex flex-col border-l-[3px] border-[#161616]">
+                                    <button 
+                                        type="button"
+                                        className="bg-[#ff6b6b] hover:bg-[#ff5252] flex-1 px-1 border-b-[3px] border-[#161616] flex items-center justify-center active:bg-[#e04848] transition-colors"
+                                        onClick={() => setChaosDurationSeconds(s => s + 1)}
+                                    >
+                                        <ChevronUp size={12} strokeWidth={4} className="text-white"/>
+                                    </button>
+                                    <button 
+                                        type="button"
+                                        className="bg-[#ff6b6b] hover:bg-[#ff5252] flex-1 px-1 flex items-center justify-center active:bg-[#e04848] transition-colors"
+                                        onClick={() => setChaosDurationSeconds(s => Math.max(1, s - 1))}
+                                    >
+                                        <ChevronDown size={12} strokeWidth={4} className="text-white"/>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
 
                         <button
-                            className="header-control neo-button flex shrink-0 items-center gap-2 bg-[#5de2e7] px-3 disabled:!bg-gray-200 disabled:!text-gray-400 disabled:!border-gray-400 disabled:shadow-none disabled:translate-y-[3px] disabled:translate-x-[3px] disabled:cursor-not-allowed"
+                            className="header-control neo-button flex shrink-0 items-center gap-1.5 bg-[#5de2e7] px-2 disabled:!bg-gray-200 disabled:!text-gray-400 disabled:!border-gray-400 disabled:shadow-none disabled:translate-y-[3px] disabled:translate-x-[3px] disabled:cursor-not-allowed"
                             onClick={stepSimulation}
                             type="button"
                             title="Process one simulation event while paused"
@@ -1180,7 +1247,7 @@ export function ArchitectureCanvas() {
                         </button>
 
                         <button
-                            className="header-control neo-button flex shrink-0 items-center gap-2 bg-[#fffdf5] px-3"
+                            className="header-control neo-button flex shrink-0 items-center gap-1.5 bg-[#fffdf5] px-2"
                             onClick={resetSimulation}
                             type="button"
                             title="Reset Simulation State"
@@ -1190,7 +1257,7 @@ export function ArchitectureCanvas() {
                         </button>
 
                         <button
-                            className="header-control neo-button flex shrink-0 items-center gap-2 bg-[#ff6b6b] px-3 disabled:!bg-gray-200 disabled:!text-gray-400 disabled:!border-gray-400 disabled:shadow-none disabled:translate-y-[3px] disabled:translate-x-[3px] disabled:cursor-not-allowed"
+                            className="header-control neo-button flex shrink-0 items-center gap-1.5 bg-[#ff6b6b] px-2 disabled:!bg-gray-200 disabled:!text-gray-400 disabled:!border-gray-400 disabled:shadow-none disabled:translate-y-[3px] disabled:translate-x-[3px] disabled:cursor-not-allowed"
                             onClick={stopSimulation}
                             type="button"
                             title="Stop simulation and clear active packets"
@@ -1221,7 +1288,7 @@ export function ArchitectureCanvas() {
 
       {/* Telemetry HUD */}
                         <div className="absolute top-4 left-4 z-50 pointer-events-auto">
-                            {!isTelemetryOpen ? (
+                            {!isTelemetryOpen && (
                                 <button
                                     className="neo-button flex h-12 min-w-12 items-center justify-center gap-2 bg-[#fffdf5] px-2 shadow-[4px_4px_0_#161616]"
                                     onClick={() => setIsTelemetryOpen(true)}
@@ -1237,8 +1304,13 @@ export function ArchitectureCanvas() {
                                             : '--'}
                                     </span>
                                 </button>
-                            ) : (
-                                <div className="bg-[#fffdf5] border-[3px] border-[#161616] shadow-[4px_4px_0_#161616] p-3 w-56 flex flex-col gap-1">
+                            )}
+                        </div>
+
+                        {isTelemetryOpen && (
+                            <>
+                                <div className="fixed inset-0 z-[90000]" onClick={() => setIsTelemetryOpen(false)} />
+                                <div className="absolute top-4 left-4 bg-[#fffdf5] border-[3px] border-[#161616] shadow-[4px_4px_0_#161616] p-3 w-56 flex flex-col gap-1 z-[90001]">
                                     <div className="flex items-center justify-between border-b-[2px] border-[#161616] pb-1 mb-1">
                                         <div className="text-[10px] font-black uppercase text-[#161616]">
                                             Live Telemetry
@@ -1403,8 +1475,8 @@ export function ArchitectureCanvas() {
                                         </span>
                                     </div>
                                 </div>
+                                </>
                             )}
-                        </div>
                         {propertiesNodeId && (
                             <NodePropertiesPanel
                                 nodeId={propertiesNodeId}
@@ -1613,9 +1685,11 @@ export function ArchitectureCanvas() {
                             <CustomCanvasControls />
                         </ReactFlow>
                         {isLogWindowOpen ? (
-                            <div className={`absolute bottom-4 right-4 z-[10000] flex w-[400px] flex-col overflow-hidden border-[3px] border-[#161616] bg-white shadow-[6px_6px_0_#161616] ${propertiesNodeId || propertiesEdgeId || infoData ? 'hidden' : ''}`}>
-                                <div className="flex justify-between items-center border-b-[3px] border-[#161616] bg-[#5de2e7] px-3 py-2 text-xs font-black uppercase">
-                                    <span className="flex items-center gap-2">
+                            <>
+                                <div className="fixed inset-0 z-[90000]" onClick={() => setIsLogWindowOpen(false)} />
+                                <div className={`absolute bottom-4 right-4 z-[90001] flex w-[400px] flex-col overflow-hidden border-[3px] border-[#161616] bg-white shadow-[6px_6px_0_#161616] ${propertiesNodeId || propertiesEdgeId || infoData ? 'hidden' : ''}`}>
+                                <div className="flex justify-between items-center border-b-[3px] border-[#161616] bg-[#5de2e7] px-2 py-2 text-xs font-black uppercase">
+                                    <span className="flex items-center gap-1.5">
                                         <Terminal size={14} /> Process & Drop Logs
                                     </span>
                                     <button
@@ -1699,8 +1773,9 @@ export function ArchitectureCanvas() {
                                     )}
                                 </div>
                             </div>
+                            </>
                         ) : (
-                            <div className={`absolute bottom-4 right-4 z-[10000] flex items-center gap-3 ${propertiesNodeId || propertiesEdgeId || infoData ? 'hidden' : ''}`}>
+                            <div className={`absolute bottom-4 right-4 z-50 flex items-center gap-3 ${propertiesNodeId || propertiesEdgeId || infoData ? 'hidden' : ''}`}>
                                 <button
                                     onClick={() => setIsLogWindowOpen(true)}
                                     className="neo-button flex h-10 w-10 items-center justify-center bg-[#161616] text-[#5de2e7] border-[3px] border-[#161616] shadow-[4px_4px_0_#5de2e7] transition-transform hover:-translate-y-1 hover:translate-x-1 hover:shadow-[0_0_0_#5de2e7]"
@@ -1715,7 +1790,7 @@ export function ArchitectureCanvas() {
 
                         {/* Help Button and Modal */}
                         <div
-                            className={`absolute top-4 right-4 z-[10000] ${propertiesNodeId || propertiesEdgeId || infoData ? 'hidden' : ''}`}
+                            className={`absolute top-4 right-4 z-50 ${propertiesNodeId || propertiesEdgeId || infoData ? 'hidden' : ''}`}
                         >
                             <button
                                 onClick={() => setIsHelpOpen(!isHelpOpen)}
@@ -1724,25 +1799,26 @@ export function ArchitectureCanvas() {
                             >
                                 <HelpCircle size={20} strokeWidth={3} />
                             </button>
-                            {isHelpOpen && (
+                        </div>
+                        {isHelpOpen && (
+                            <div 
+                                className="fixed inset-0 z-[90010] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+                                onPointerDown={() => setIsHelpOpen(false)}
+                            >
                                 <div 
-                                    className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
-                                    onPointerDown={() => setIsHelpOpen(false)}
+                                    className="neo-panel w-full max-w-2xl bg-white flex flex-col shadow-[12px_12px_0_#161616] max-h-[85vh] animate-in zoom-in-95 duration-200"
+                                    onPointerDown={e => e.stopPropagation()}
                                 >
-                                    <div 
-                                        className="neo-panel w-full max-w-2xl bg-white flex flex-col shadow-[12px_12px_0_#161616] max-h-[85vh] animate-in zoom-in-95 duration-200"
-                                        onPointerDown={e => e.stopPropagation()}
-                                    >
-                                        <div className="flex justify-between items-center border-b-[3px] border-[#161616] bg-[#ffde59] px-4 py-3 text-sm font-black uppercase">
-                                            <span className="flex items-center gap-2"><HelpCircle size={20} strokeWidth={3} /> Canvas User Guide</span>
-                                            <button
-                                                onClick={() => setIsHelpOpen(false)}
-                                                className="hover:text-[#ff6b6b] transition-colors p-1"
-                                            >
-                                                <X size={20} strokeWidth={3} />
-                                            </button>
-                                        </div>
-                                        <div className="flex-1 overflow-y-auto overscroll-contain p-6 text-sm font-medium space-y-8 custom-scrollbar">
+                                    <div className="flex justify-between items-center border-b-[3px] border-[#161616] bg-[#ffde59] px-4 py-3 text-sm font-black uppercase">
+                                        <span className="flex items-center gap-1.5"><HelpCircle size={20} strokeWidth={3} /> Canvas User Guide</span>
+                                        <button
+                                            onClick={() => setIsHelpOpen(false)}
+                                            className="hover:text-[#ff6b6b] transition-colors p-1"
+                                        >
+                                            <X size={20} strokeWidth={3} />
+                                        </button>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto overscroll-contain p-6 text-sm font-medium space-y-8 custom-scrollbar">
 
                                         <div>
                                             <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#ffde59] px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
@@ -2093,17 +2169,31 @@ export function ArchitectureCanvas() {
                                         </div>
 
                                         <div>
+                                            <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#5de2e7] px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
+                                                ▶️ Playback & Controls
+                                            </h3>
+                                            <ul className="list-disc space-y-1.5 pl-4 text-sm font-bold">
+                                                <li><b>Play / Pause:</b> Toggle the continuous stream of automated traffic.</li>
+                                                <li><b>Run Once / Step:</b> Perfect for debugging! Click "Run Once" to fire a single isolated request, and "Step" while paused to move packets forward frame-by-frame.</li>
+                                                <li><b>Speed:</b> Visual playback speed (0.5x to 3x). Doesn't affect actual physics!</li>
+                                                <li><b>Chaos Monkey 🐒:</b> Test system resilience! Target a specific node (or choose RANDOM), and click Chaos to forcefully take it OFFLINE for a set duration.</li>
+                                            </ul>
+                                        </div>
+
+                                        <div>
                                             <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-white px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
                                                 📚 Terminology & Metrics
                                             </h3>
                                             <ul className="list-disc space-y-1.5 pl-4 text-sm font-bold">
-                                                <li><b>Throughput (RPS):</b> The number of requests successfully completed by the Client per simulated second.</li>
-                                                <li><b>Latency (Average):</b> The total simulated time it took a request to leave the client, traverse all microservices/databases, and return.</li>
-                                                <li><b>P95 & P99:</b> Statistical estimates showing the latency threshold that the fastest 95% (or 99%) of your users will experience.</li>
-                                                <li><b>Concurrency / Max Active:</b> How many simultaneous requests the system can handle before packets start queueing up in memory.</li>
-                                                <li><b>Cache Thrashing:</b> When a Cache node has a hit-rate that is too low, forcing the backend database to do the same amount of work, rendering the cache useless.</li>
-                                                <li><b>Deadlock:</b> When an infinite loop of routing occurs (Node A &rarr; Node B &rarr; Node A) causing the physics engine to trap the packet forever.</li>
-                                                <li><b>Starvation:</b> When a node's incoming traffic vastly exceeds its processing speed, causing its internal queue to overflow indefinitely.</li>
+                                                <li><b>Throughput (RPS):</b> Rate of requests injected by Clients per simulated second.</li>
+                                                <li><b>Latency (Average, P95, P99):</b> How long a request takes round-trip. P99 shows the latency for your worst 1% of users.</li>
+                                                <li><b>Max Active:</b> The hard limit of simultaneous packets allowed in the system. Beyond this, packets are aggressively dropped.</li>
+                                                <li><b>Limit:</b> The absolute total packets to simulate before Auto-Stopping (leave empty for ∞).</li>
+                                                <li><b>Bottleneck:</b> A node that is processing requests slower than they are arriving (indicated by an orange glowing outline).</li>
+                                                <li><b>Cache Thrashing:</b> A cache node with a low hit-rate, rendering it useless while adding network delay.</li>
+                                                <li><b>Deadlock:</b> An infinite routing loop (Node A &rarr; Node B &rarr; Node A) that traps packets forever.</li>
+                                                <li><b>Starvation:</b> When incoming traffic exceeds processing speed, causing the internal memory queue to overflow (503 Error).</li>
+                                                <li><b>Telemetry HUD:</b> The live dashboard showing Total Requests, In Flight packets, Dropped packets, and HTTP Status Codes breakdown.</li>
                                             </ul>
                                         </div>
 
@@ -2181,25 +2271,25 @@ export function ArchitectureCanvas() {
                                                 Packet Legend
                                             </h3>
                                             <div className="flex flex-col gap-2 text-sm font-bold">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1.5">
                                                     <span className="w-5 h-4 bg-[#ffde59] border-[2px] border-[#161616] inline-block rounded-[4px]"></span>{' '}
                                                     <b>
                                                         Incoming / Base Request
                                                     </b>
                                                 </div>
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1.5">
                                                     <span className="w-5 h-4 bg-[#ff4fa3] border-[2px] border-[#161616] inline-block rounded-[4px]"></span>{' '}
                                                     <b>
                                                         Forwarded / Sub-Request
                                                     </b>
                                                 </div>
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1.5">
                                                     <span className="w-5 h-4 bg-[#9cf57a] border-[2px] border-[#161616] inline-block rounded-[4px]"></span>{' '}
                                                     <b>
                                                         Success Response / Hit
                                                     </b>
                                                 </div>
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1.5">
                                                     <span className="w-5 h-4 bg-[#ff6b6b] border-[2px] border-[#161616] inline-block rounded-[4px]"></span>{' '}
                                                     <b>Error Response / Miss</b>
                                                 </div>
@@ -2207,21 +2297,21 @@ export function ArchitectureCanvas() {
                                                     <div className="mb-1 text-xs font-black uppercase">
                                                         Canvas Marks
                                                     </div>
-                                                    <div className="flex items-center gap-2">
+                                                    <div className="flex items-center gap-1.5">
                                                         <span className="h-4 w-5 border-[3px] border-[#ff4fa3] bg-white"></span>
                                                         <b>
                                                             Pink outline:
                                                             selected node
                                                         </b>
                                                     </div>
-                                                    <div className="mt-1 flex items-center gap-2">
+                                                    <div className="mt-1 flex items-center gap-1.5">
                                                         <span className="h-4 w-5 border-[2px] border-[#161616] bg-[#ffad66]"></span>
                                                         <b>
                                                             Orange glow: latency
                                                             bottleneck
                                                         </b>
                                                     </div>
-                                                    <div className="mt-1 flex items-center gap-2">
+                                                    <div className="mt-1 flex items-center gap-1.5">
                                                         <span className="h-4 w-5 border-[2px] border-dashed border-[#161616] bg-[#fffdf5]"></span>
                                                         <b>
                                                             Dashed area:
@@ -2236,7 +2326,6 @@ export function ArchitectureCanvas() {
                                     </div>
                                 </div>
                             )}
-                        </div>
                     </section>
 
                     <aside className="neo-panel w-full shrink-0 bg-[#fffdf5] lg:w-72 lg:overflow-y-auto">
@@ -2322,7 +2411,7 @@ export function ArchitectureCanvas() {
                                     </div>
                                 </div>
                                 <button
-                                    className="neo-button mt-5 flex w-full items-center justify-center gap-2 border-[3px] border-[#161616] bg-[#ff4fa3] px-3 py-2 text-sm font-black uppercase shadow-[3px_3px_0_#161616]"
+                                    className="neo-button mt-5 flex w-full items-center justify-center gap-2 border-[3px] border-[#161616] bg-[#ff4fa3] px-2 py-2 text-sm font-black uppercase shadow-[3px_3px_0_#161616]"
                                     onClick={() => {
                                         setNodes([]);
                                         setEdges([]);
@@ -2339,21 +2428,21 @@ export function ArchitectureCanvas() {
                             <div className="mt-6 flex flex-col gap-3">
                                 <button
                                     onClick={() => setIsStatsOpen(true)}
-                                    className="neo-button flex w-full items-center justify-center gap-2 border-[3px] border-[#161616] bg-[#ffde59] px-3 py-3 text-sm font-black uppercase shadow-[3px_3px_0_#161616] hover:bg-[#ebd05c]"
+                                    className="neo-button flex w-full items-center justify-center gap-2 border-[3px] border-[#161616] bg-[#ffde59] px-2 py-3 text-sm font-black uppercase shadow-[3px_3px_0_#161616] hover:bg-[#ebd05c]"
                                     type="button"
                                 >
                                     <BarChart size={18} strokeWidth={3} /> View Stats
                                 </button>
                                 <button
                                     onClick={() => setIsNotesOpen(true)}
-                                    className="neo-button flex w-full items-center justify-center gap-2 border-[3px] border-[#161616] bg-[#5de2e7] px-3 py-3 text-sm font-black uppercase shadow-[3px_3px_0_#161616] hover:bg-[#48c9ce]"
+                                    className="neo-button flex w-full items-center justify-center gap-2 border-[3px] border-[#161616] bg-[#5de2e7] px-2 py-3 text-sm font-black uppercase shadow-[3px_3px_0_#161616] hover:bg-[#48c9ce]"
                                     type="button"
                                 >
                                     <FileText size={18} strokeWidth={3} /> Project Notes
                                 </button>
                                 <button
                                     onClick={() => setIsFeedbackOpen(true)}
-                                    className="neo-button flex w-full items-center justify-center gap-2 border-[3px] border-[#161616] bg-white px-3 py-3 text-sm font-black uppercase shadow-[3px_3px_0_#161616] hover:bg-gray-50"
+                                    className="neo-button flex w-full items-center justify-center gap-2 border-[3px] border-[#161616] bg-white px-2 py-3 text-sm font-black uppercase shadow-[3px_3px_0_#161616] hover:bg-gray-50"
                                     type="button"
                                 >
                                     <AlertTriangle size={18} strokeWidth={3} className="text-[#ff6b6b]" /> Report Bug
@@ -2382,7 +2471,7 @@ export function ArchitectureCanvas() {
                     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setIsStatsOpen(false)}>
                         <div className="w-full max-w-sm bg-[#fffdf5] border-[3px] border-[#161616] shadow-[12px_12px_0_#161616] flex flex-col animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-between border-b-[3px] border-[#161616] p-4 bg-[#ffde59]">
-                                <h2 className="font-black uppercase tracking-wider text-lg flex items-center gap-2"><BarChart size={20} strokeWidth={3}/> Architecture Stats</h2>
+                                <h2 className="font-black uppercase tracking-wider text-lg flex items-center gap-1.5"><BarChart size={20} strokeWidth={3}/> Architecture Stats</h2>
                                 <button onClick={() => setIsStatsOpen(false)} className="neo-button p-1.5 hover:bg-white bg-white/50" title="Close"><X size={18} strokeWidth={3} /></button>
                             </div>
                             <div className="p-6 flex flex-col gap-3 text-sm font-bold">
@@ -2428,7 +2517,7 @@ export function ArchitectureCanvas() {
                     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setIsNotesOpen(false)}>
                         <div className="w-full max-w-2xl bg-[#fffdf5] border-[3px] border-[#161616] shadow-[12px_12px_0_#161616] flex flex-col animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-between border-b-[3px] border-[#161616] p-4 bg-[#5de2e7]">
-                                <h2 className="font-black uppercase tracking-wider text-lg flex items-center gap-2"><FileText size={20} strokeWidth={3}/> Project Notes</h2>
+                                <h2 className="font-black uppercase tracking-wider text-lg flex items-center gap-1.5"><FileText size={20} strokeWidth={3}/> Project Notes</h2>
                                 <button onClick={() => setIsNotesOpen(false)} className="neo-button p-1.5 hover:bg-white bg-white/50" title="Close"><X size={18} strokeWidth={3} /></button>
                             </div>
                             <div className="p-4">
@@ -2441,10 +2530,10 @@ export function ArchitectureCanvas() {
                                 />
                             </div>
                             <div className="border-t-[3px] border-[#161616] p-4 bg-gray-50 flex justify-end gap-3">
-                                <button onClick={downloadNotesTxt} className="neo-button flex items-center gap-2 bg-white border-[3px] border-[#161616] px-4 py-2 text-xs font-black uppercase shadow-[2px_2px_0_#161616] hover:bg-[#ffde59]">
+                                <button onClick={downloadNotesTxt} className="neo-button flex items-center gap-1.5 bg-white border-[3px] border-[#161616] px-4 py-2 text-xs font-black uppercase shadow-[2px_2px_0_#161616] hover:bg-[#ffde59]">
                                     <Download size={16} strokeWidth={3}/> Download .TXT
                                 </button>
-                                <button onClick={downloadNotesJson} className="neo-button flex items-center gap-2 bg-white border-[3px] border-[#161616] px-4 py-2 text-xs font-black uppercase shadow-[2px_2px_0_#161616] hover:bg-[#a18cff]">
+                                <button onClick={downloadNotesJson} className="neo-button flex items-center gap-1.5 bg-white border-[3px] border-[#161616] px-4 py-2 text-xs font-black uppercase shadow-[2px_2px_0_#161616] hover:bg-[#a18cff]">
                                     <Download size={16} strokeWidth={3}/> Download .JSON
                                 </button>
                             </div>
@@ -2488,7 +2577,7 @@ export function ArchitectureCanvas() {
                     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setIsAutoLayoutModalOpen(false)}>
                         <div className="w-full max-w-md bg-[#fffdf5] border-[3px] border-[#161616] shadow-[12px_12px_0_#161616] flex flex-col animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-between border-b-[3px] border-[#161616] p-4 bg-[#5de2e7]">
-                                <h2 className="font-black uppercase tracking-wider text-xl flex items-center gap-2"><Layout size={24} strokeWidth={3}/> Auto Layout</h2>
+                                <h2 className="font-black uppercase tracking-wider text-xl flex items-center gap-1.5"><Layout size={24} strokeWidth={3}/> Auto Layout</h2>
                                 <button onClick={() => setIsAutoLayoutModalOpen(false)} className="neo-button p-1.5 bg-white border-[2px] border-[#161616] hover:-translate-y-1 hover:translate-x-1 hover:shadow-none shadow-[2px_2px_0_#161616]" title="Close"><X size={18} strokeWidth={3} /></button>
                             </div>
                             <div className="p-6 flex flex-col gap-6">
@@ -2528,7 +2617,7 @@ export function ArchitectureCanvas() {
                                         handleAutoLayout(layoutDirection);
                                         setIsAutoLayoutModalOpen(false);
                                     }} 
-                                    className="neo-button flex items-center gap-2 px-6 py-2.5 font-black uppercase bg-[#ff4fa3] text-white border-[3px] border-[#161616] shadow-[4px_4px_0_#161616] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0_#161616]"
+                                    className="neo-button flex items-center gap-1.5 px-6 py-2.5 font-black uppercase bg-[#ff4fa3] text-white border-[3px] border-[#161616] shadow-[4px_4px_0_#161616] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0_#161616]"
                                 >
                                     <Layout size={18} strokeWidth={3} /> Apply Layout
                                 </button>
@@ -2556,7 +2645,7 @@ export function ArchitectureCanvas() {
                     results={securityReviewResults}
                     error={securityError}
                     onAutoResolve={(id, issue) => {
-                        resolveIssue(id, issue, (explanation) => {
+                        resolveIssue(id, issue, undefined, (explanation) => {
                             clearWarnings();
                             resetSimulationState();
                             setResolveSuccessMessage(explanation);
@@ -2655,7 +2744,7 @@ export function ArchitectureCanvas() {
                     nodes={nodes as ArchitectureFlowNode[]}
                     edges={edges}
                     onAutoResolve={(id, issue) => {
-                        resolveIssue(id, issue, (explanation) => {
+                        resolveIssue(id, issue, undefined, (explanation) => {
                             clearWarnings();
                             resetSimulationState();
                             setResolveSuccessMessage(explanation);
@@ -2688,9 +2777,11 @@ export function ArchitectureCanvas() {
 
                 {/* Warnings Drawer */}
                 {isWarningsPanelOpen && (
-                    <div className="absolute right-6 bottom-24 z-50 w-80 max-h-[400px] flex flex-col bg-white border-[3px] border-[#161616] shadow-[8px_8px_0_#161616]">
+                    <>
+                    <div className="fixed inset-0 z-[90000]" onClick={() => setIsWarningsPanelOpen(false)} />
+                    <div className="absolute right-6 bottom-24 z-[90001] w-80 max-h-[400px] flex flex-col bg-white border-[3px] border-[#161616] shadow-[8px_8px_0_#161616]">
                         <div className="flex items-center justify-between p-3 border-b-[3px] border-[#161616] bg-[#ffde59]">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
                                 <AlertTriangle className="w-5 h-5 text-[#161616]" />
                                 <h3 className="font-black text-sm uppercase">System Warnings</h3>
                             </div>
@@ -2724,8 +2815,9 @@ export function ArchitectureCanvas() {
                                         <button 
                                             className="mt-2 text-[10px] font-black uppercase bg-[#5de2e7] border-2 border-[#161616] px-2 py-1 flex items-center justify-center gap-1 hover:bg-[#9cf57a] w-full"
                                             onClick={() => {
-                                                resolveIssue(warning.id, warning.message, (explanation) => {
-                                                    clearWarnings();
+                                                resolveIssue(warning.id, warning.message, warning.nodeId, (explanation) => {
+                                                    clearWarnings(); // Clears the ref so it can trigger again if the fix was bad
+                                                    setSystemWarnings(prev => prev.filter(w => w.id !== warning.id)); // Actually remove it from the UI
                                                     resetSimulationState();
                                                     setResolveSuccessMessage(explanation);
                                                 });
@@ -2750,20 +2842,21 @@ export function ArchitectureCanvas() {
                                         setSystemWarnings([]);
                                         clearWarnings();
                                     }}
-                                    className="text-xs font-black uppercase bg-white border-[2px] border-[#161616] px-3 py-1 shadow-[2px_2px_0_#161616] hover:-translate-y-0.5 transition-transform active:translate-y-0 active:shadow-none"
+                                    className="text-xs font-black uppercase bg-white border-[2px] border-[#161616] px-2 py-1 shadow-[2px_2px_0_#161616] hover:-translate-y-0.5 transition-transform active:translate-y-0 active:shadow-none"
                                 >
                                     Clear All
                                 </button>
                             </div>
                         )}
                     </div>
+                    </>
                 )}
 
                 {resolveSuccessMessage && (
                     <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
                         <div className="bg-[#fffdf5] border-[3px] border-[#161616] shadow-[8px_8px_0_#161616] max-w-md w-full flex flex-col relative animate-in fade-in zoom-in duration-200">
                             <div className="border-b-[3px] border-[#161616] bg-[#5de2e7] px-4 py-3 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5">
                                     <WandSparkles className="w-5 h-5 text-[#161616]" />
                                     <h2 className="font-black text-lg uppercase tracking-tight text-[#161616]">
                                         Issue Resolved

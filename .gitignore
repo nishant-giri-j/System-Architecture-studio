@@ -8,3 +8,6 @@ coverage
 *.tsbuildinfo
 pnpm-debug.log*
 
+
+*.log
+feedback.log

@@ -320,7 +320,11 @@ export function resolveLatencyProfile(
     };
 }
 
-export const technologyLibrary: TechnologyDefinition[] = [
+// ── Runtime Technology Registry ───────────────────────────────
+// The library is mutable so AI-discovered technologies can be
+// registered at runtime and appear in the palette immediately.
+
+export let technologyLibrary: TechnologyDefinition[] = [
     // ?? Client ??
     {
         id: 'web-client',
@@ -1371,4 +1375,171 @@ export const technologyLibrary: TechnologyDefinition[] = [
         color: '#a18cff',
         description: 'Availability zone boundary',
     },
+    {
+    "id": "react",
+    "label": "React",
+    "category": "client",
+    "color": "#61DAFB",
+    "description": "A popular open-source JavaScript library for building declarative, component-based user interfaces."
+},
+    {
+    "id": "aws-api-gateway",
+    "label": "AWS API Gateway",
+    "category": "boundary",
+    "color": "#FF4F8B",
+    "description": "A fully managed service that makes it easy for developers to create, publish, maintain, monitor, and secure APIs at any scale."
+},
+    {
+    "id": "nodejs",
+    "label": "Node.js",
+    "category": "compute",
+    "color": "#339933",
+    "description": "An open-source, cross-platform JavaScript runtime environment built on Chrome's V8 engine."
+},
+    {
+    "id": "custom-media-server",
+    "label": "Custom Media Server",
+    "category": "service",
+    "color": "#7209B7",
+    "description": "A tailored streaming server optimized for low-latency media ingest, processing, and distribution."
+},
+    {
+    "id": "aws-s3",
+    "label": "AWS S3",
+    "category": "storage",
+    "color": "#E05243",
+    "description": "A highly scalable, durable, and secure object storage service."
+},
+    {
+    "id": "aws-cloudfront",
+    "label": "AWS CloudFront",
+    "category": "network",
+    "color": "#FF9900",
+    "description": "A fast, highly secure, and programmable Content Delivery Network (CDN)."
+},
+    {
+    "id": "websocket",
+    "label": "WebSocket (Web API / Library)",
+    "category": "network",
+    "color": "#010101",
+    "description": "A technology providing full-duplex communication channels over a single TCP connection."
+},
+    {
+    "id": "obs-studio",
+    "label": "OBS Studio",
+    "category": "client",
+    "color": "#302c34",
+    "description": "Free and open-source software for video recording and live streaming."
+},
+    {
+    "id": "nginx",
+    "label": "Nginx",
+    "category": "boundary",
+    "color": "#009639",
+    "description": "High-performance HTTP server, reverse proxy, and load balancer."
+},
+    {
+    "id": "nginx-rtmp",
+    "label": "NGINX RTMP Module",
+    "category": "network",
+    "color": "#009539",
+    "description": "An extension for Nginx providing media streaming capabilities via RTMP, HLS, and MPEG-DASH."
+},
+    {
+    "id": "aws-elemental-mediaconvert",
+    "label": "AWS Elemental MediaConvert",
+    "category": "service",
+    "color": "#FF9900",
+    "description": "File-based video transcoding service with broadcast-grade features."
+},
+    {
+    "id": "go",
+    "label": "Go",
+    "category": "compute",
+    "color": "#00ADD8",
+    "description": "Statically typed, compiled programming language designed for concurrent cloud-native software."
+},
+
+    {
+    "id": "react-native",
+    "label": "React Native",
+    "category": "client",
+    "color": "#61DAFB",
+    "description": "An open-source UI framework for developing cross-platform native mobile applications."
+},
+    {
+    "id": "cloudflare",
+    "label": "Cloudflare",
+    "category": "boundary",
+    "color": "#F38020",
+    "description": "A global cloud-based security, performance, and edge network delivery platform."
+},
+    {
+    "id": "envoy",
+    "label": "Envoy Proxy",
+    "category": "network",
+    "color": "#1175B9",
+    "description": "A high-performance L7 proxy and communication bus designed for large microservice architectures."
+},
+    {
+    "id": "spring-boot",
+    "label": "Spring Boot",
+    "category": "service",
+    "color": "#6DB33F",
+    "description": "A popular Java framework used to rapidly create stand-alone, production-grade microservices."
+},
+    {
+    "id": "cpp",
+    "label": "C++",
+    "category": "compute",
+    "color": "#00599C",
+    "description": "A high-performance, general-purpose programming language emphasizing speed and precise resource management."
+},
+    {
+    "id": "postgres",
+    "label": "PostgreSQL",
+    "category": "storage",
+    "color": "#336791",
+    "description": "A powerful, highly-extensible open-source object-relational database system."
+},
+    {
+    "id": "apigateway",
+    "label": "API Gateway",
+    "category": "boundary",
+    "color": "#FF6F00",
+    "description": "An API gateway is an entry point for all clients, acting as a reverse proxy to route requests, composition, and protocol translation."
+},
+    {
+    "id": "python",
+    "label": "Python",
+    "category": "compute",
+    "color": "#3776AB",
+    "description": "Python is an interpreted, high-level, general-purpose programming language known for its readability and extensive ecosystem."
+},
+    {
+    "id": "triton-inference-server",
+    "label": "Triton Inference Server",
+    "category": "service",
+    "color": "#76B900",
+    "description": "An open-source inference serving software that standardizes model deployment and maximizes GPU utilization."
+},
 ];
+
+// ── Registry helpers for AI-discovered technologies ───────────
+
+/** Register a new technology at runtime so it appears in the palette. */
+export function registerTechnology(tech: TechnologyDefinition): void {
+    if (!technologyLibrary.some((t) => t.id === tech.id)) {
+        technologyLibrary = [...technologyLibrary, tech];
+    }
+}
+
+/** Remove a dynamically registered technology. */
+export function unregisterTechnology(id: string): void {
+    technologyLibrary = technologyLibrary.filter((t) => t.id !== id);
+}
+
+/** Return the current technology library (including runtime additions). */
+export function getTechnologyLibrary(): TechnologyDefinition[] {
+    return technologyLibrary;
+}

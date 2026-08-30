@@ -20,6 +20,8 @@ interface NodePropertiesProps {
         logicSteps: LogicStep[],
         processingDelay?: number,
         latency?: NodeLatencyConfig,
+        routingStrategy?: 'broadcast' | 'load-balance',
+        disabled?: boolean,
     ) => void;
     onClose: () => void;
 }
@@ -43,7 +45,7 @@ export function NodePropertiesPanel({
     // Get nodes connected via any edges from the current node
     const connectedTargets = useMemo(() => {
         if (!node) return [];
-        return edges
+        const targets = edges
             .filter((e) => e.source === node.id || e.target === node.id)
             .map((e) => {
                 const targetId = e.source === node.id ? e.target : e.source;
@@ -54,6 +56,15 @@ export function NodePropertiesPanel({
             edgeId: string;
             targetNode: ArchitectureFlowNode;
         }[];
+        
+        // Deduplicate by targetNode.id so a node only appears once in the dropdown
+        const uniqueTargets = new Map();
+        targets.forEach(t => {
+            if (!uniqueTargets.has(t.targetNode.id)) {
+                uniqueTargets.set(t.targetNode.id, t);
+            }
+        });
+        return Array.from(uniqueTargets.values());
     }, [node, edges, nodes]);
 
     useEffect(() => {
@@ -75,7 +86,7 @@ export function NodePropertiesPanel({
         onUpdateNode(node.id, steps, node.data.processingDelay, {
             ...latency,
             [field]: value,
-        });
+        }, node.data.routingStrategy);
     };
 
     const handleSaveStep = () => {
@@ -93,7 +104,7 @@ export function NodePropertiesPanel({
                       }
                     : s,
             );
-            onUpdateNode(node.id, updatedSteps, node.data.processingDelay);
+            onUpdateNode(node.id, updatedSteps, node.data.processingDelay, node.data.latency, node.data.routingStrategy);
             setEditingStepId(null);
         } else {
             const newStep: LogicStep = {
@@ -107,6 +118,8 @@ export function NodePropertiesPanel({
                 node.id,
                 [...steps, newStep],
                 node.data.processingDelay,
+                node.data.latency,
+                node.data.routingStrategy,
             );
         }
     };
@@ -124,6 +137,8 @@ export function NodePropertiesPanel({
             node.id,
             steps.filter((s) => s.id !== stepId),
             node.data.processingDelay,
+            node.data.latency,
+            node.data.routingStrategy,
         );
         if (editingStepId === stepId) setEditingStepId(null);
     };
@@ -234,7 +249,7 @@ export function NodePropertiesPanel({
         <div className="neo-panel absolute right-4 top-4 bottom-4 z-[9999] flex w-80 flex-col overflow-hidden bg-white shadow-[8px_8px_0_#161616]">
             <div className="flex items-center justify-between border-b-[3px] border-[#161616] bg-[#5de2e7] p-3">
                 <h3 className="font-black uppercase truncate pr-2">
-                    {node.data.label} Logic
+                    {node.data.label} {technologies.find(t => t.id === node.data.technologyId)?.category === 'client' ? 'Settings' : 'Logic'}
                 </h3>
                 <button
                     onClick={onClose}
@@ -245,6 +260,31 @@ export function NodePropertiesPanel({
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 bg-[#f8f9fa]">
+                {technologies.find(t => t.id === node.data.technologyId)?.category === 'client' && (
+                    <div className="mb-6 border-[3px] border-[#161616] p-3 shadow-[4px_4px_0_#161616] bg-[#ffde59]">
+                        <label className="flex items-center gap-3 text-sm font-black uppercase cursor-pointer">
+                            <input
+                                type="checkbox"
+                                className="w-5 h-5 accent-[#ff4fa3]"
+                                checked={!node.data.disabled}
+                                onChange={(e) => {
+                                    onUpdateNode(
+                                        node.id,
+                                        steps,
+                                        node.data.processingDelay,
+                                        node.data.latency,
+                                        node.data.routingStrategy,
+                                        !e.target.checked
+                                    );
+                                }}
+                            />
+                            <span>Enable Traffic Generation</span>
+                        </label>
+                        <p className="text-[10px] font-bold mt-2 text-[#161616]/70 normal-case leading-tight">
+                            Uncheck to pause requests from this specific client during the simulation. Useful for isolating traffic sources.
+                        </p>
+                    </div>
+                )}
                 <div className="mb-6 border-[3px] border-[#161616] p-3 shadow-[4px_4px_0_#161616] bg-white">
                     <label className="flex flex-col gap-1 text-sm font-black uppercase">
                         Simulated Processing Delay
@@ -260,6 +300,8 @@ export function NodePropertiesPanel({
                                         node.id,
                                         steps,
                                         parseInt(e.target.value),
+                                        node.data.latency,
+                                        node.data.routingStrategy
                                     )
                                 }
                                 className="w-full accent-[#ff4fa3]"
@@ -271,6 +313,26 @@ export function NodePropertiesPanel({
                         <span className="text-[10px] font-bold text-[#161616]/70 leading-tight mt-1 normal-case">
                             Make this node slower to observe latency
                             bottlenecks.
+                        </span>
+                    </label>
+                </div>
+
+                <div className="mb-6 border-[3px] border-[#161616] p-3 shadow-[4px_4px_0_#161616] bg-white">
+                    <label className="flex flex-col gap-1 text-sm font-black uppercase">
+                        Routing Strategy
+                        <select
+                            className="neo-input p-1 mt-2 font-bold"
+                            value={node.data.routingStrategy || 'broadcast'}
+                            onChange={(e) => {
+                                const newStrategy = e.target.value as 'broadcast' | 'load-balance';
+                                onUpdateNode(node.id, steps, node.data.processingDelay, node.data.latency, newStrategy);
+                            }}
+                        >
+                            <option value="broadcast">Broadcast (Default)</option>
+                            <option value="load-balance">Load Balance</option>
+                        </select>
+                        <span className="text-[10px] font-bold text-[#161616]/70 leading-tight mt-1 normal-case">
+                            'Broadcast' copies traffic to all outputs. 'Load Balance' picks one output randomly.
                         </span>
                     </label>
                 </div>
@@ -303,23 +365,25 @@ export function NodePropertiesPanel({
                                 <option value="heavy">Heavy</option>
                             </select>
                         </label>
-                        <label className="flex flex-col gap-1">
-                            Cache hit rate (%): {latency.cacheHitRate ?? 80}
-                            <input
-                                type="range"
-                                min="0"
-                                max="100"
-                                step="5"
-                                value={latency.cacheHitRate ?? 80}
-                                onChange={(event) =>
-                                    updateLatency(
-                                        'cacheHitRate',
-                                        Number(event.target.value),
-                                    )
-                                }
-                                className="accent-[#9cf57a]"
-                            />
-                        </label>
+                        { (technologies.find(t => t.id === node.data.technologyId)?.category === 'cache' || steps.some(s => s.action === 'simulate-cache')) && (
+                            <label className="flex flex-col gap-1">
+                                Cache hit rate (%): {latency.cacheHitRate ?? 80}
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    step="5"
+                                    value={latency.cacheHitRate ?? 80}
+                                    onChange={(event) =>
+                                        updateLatency(
+                                            'cacheHitRate',
+                                            Number(event.target.value),
+                                        )
+                                    }
+                                    className="accent-[#9cf57a]"
+                                />
+                            </label>
+                        )}
                         <label className="flex flex-col gap-1">
                             Concurrent requests
                             <input
@@ -393,9 +457,10 @@ export function NodePropertiesPanel({
                         </p>
                     </div>
                 </div>
+                
                 {steps.length === 0 ? (
-                    <p className="mb-4 text-sm font-bold text-gray-500">
-                        No logic defined. Will use default fallback behavior.
+                    <p className="mb-4 text-sm font-bold text-[#ff6b6b]">
+                        No logic defined. This node will drop packets!
                     </p>
                 ) : (
                     <div className="mb-6 flex flex-col gap-2">
