@@ -1523,6 +1523,13 @@ export let technologyLibrary: TechnologyDefinition[] = [
     "color": "#76B900",
     "description": "An open-source inference serving software that standardizes model deployment and maximizes GPU utilization."
 },
+    {
+    "id": "stockfish",
+    "label": "Stockfish Engine",
+    "category": "compute",
+    "color": "#E3A857",
+    "description": "High-performance chess engine for calculations and game analysis."
+},
 ];
 
 // ── Registry helpers for AI-discovered technologies ───────────
