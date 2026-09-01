@@ -66,7 +66,8 @@ import {
     ArrowDown,
     ArrowUp,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    BookOpen,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -91,6 +92,9 @@ import { InformationDrawer } from "./information-drawer";
 import { AiPromptModal } from "./ai-prompt-modal";
 import { useAiArchitect } from '../../hooks/use-ai-architect';
 import { useAutoResolve } from '../../hooks/use-auto-resolve';
+import { useExplainArchitecture } from '../../hooks/use-explain-architecture';
+import { ExplainFlowModal } from './explain-flow-modal';
+import { ExperimentModal } from './experiment-modal';
 import { getLayoutedElements } from '../../lib/auto-layout';
 
 const STORAGE_KEY = 'architecture-studio:phase-2-diagram';
@@ -280,9 +284,17 @@ export function ArchitectureCanvas() {
     const { resolveIssue, isResolving, cancelResolve } = useAutoResolve(nodes as ArchitectureFlowNode[], edges, setNodes, setEdges);
     const [resolveSuccessMessage, setResolveSuccessMessage] = useState<string | null>(null);
     
+    // Explain Architecture
+    const [isExplainModalOpen, setIsExplainModalOpen] = useState(false);
+    const { generateExplanation, cancelExplanation, clearExplanation, isExplaining, explanation, error: explainError } = useExplainArchitecture();
+    
     // Security Review
     const [isSecurityReviewModalOpen, setIsSecurityReviewModalOpen] = useState(false);
     const [securityReviewResults, setSecurityReviewResults] = useState<AiSecurityReviewResult | null>(null);
+
+    // AI Experiment Sweep
+    const [isExperimentModalOpen, setIsExperimentModalOpen] = useState(false);
+    const [experimentResetKey, setExperimentResetKey] = useState(0);
     const { runReview, cancelReview, isAnalyzing, error: securityError } = useSecurityReview();
 
     // Logic Tester
@@ -319,9 +331,17 @@ export function ArchitectureCanvas() {
 
 
 
+    const [isLogGlowing, setIsLogGlowing] = useState(false);
+
     useEffect(() => {
         if (isPlaying || isSingleCycle) {
-            setIsLogWindowOpen(true);
+            setIsLogGlowing(true);
+            const timeout = setTimeout(() => {
+                setIsLogGlowing(false);
+            }, 3000);
+            return () => clearTimeout(timeout);
+        } else {
+            setIsLogGlowing(false);
         }
     }, [isPlaying, isSingleCycle]);
 
@@ -438,6 +458,7 @@ export function ArchitectureCanvas() {
     const resetToolsState = useCallback(() => {
         setSecurityReviewResults(null);
         setLogicTestResults(null);
+        setExperimentResetKey(k => k + 1);
         setHighlightedErrorNodeIds([]);
         setHighlightedErrorEdgeIds([]);
         setSystemWarnings([]);
@@ -492,12 +513,25 @@ export function ArchitectureCanvas() {
     }, [isPaused, isPlaying, stepEvent, metrics.totalRequests, metrics.inFlightRequests, totalLimit, resetSimulationState]);
 
     useEffect(() => {
-        setEdges((currentEdges) =>
-            currentEdges.map((edge) => {
+        setEdges((currentEdges) => {
+            let changed = false;
+            const next = currentEdges.map((edge) => {
                 const pulsesForEdge = edgePulses[edge.id] || [];
+                const shouldAnimate = isPlaying && !isPaused;
+                
+                if (
+                    edge.animated === shouldAnimate &&
+                    edge.data?.pulses === pulsesForEdge &&
+                    edge.data?.isPaused === isPaused &&
+                    edge.data?.playbackSpeed === playbackSpeed
+                ) {
+                    return edge;
+                }
+                
+                changed = true;
                 return {
                     ...edge,
-                    animated: isPlaying && !isPaused, // Keep pure CSS continuous animation too!
+                    animated: shouldAnimate,
                     data: {
                         ...edge.data,
                         event: edge.data?.event ?? 'event',
@@ -506,21 +540,27 @@ export function ArchitectureCanvas() {
                         playbackSpeed,
                     },
                 };
-            }),
-        );
-    }, [isPlaying, isPaused, edgePulses, setEdges]);
+            });
+            return changed ? next : currentEdges;
+        });
+    }, [isPlaying, isPaused, edgePulses, playbackSpeed, setEdges]);
 
     // Apply bottleneck styles
     useEffect(() => {
-        setNodes((nds) =>
-            nds.map((n) => {
+        setNodes((nds) => {
+            let changed = false;
+            const next = nds.map((n) => {
                 const isBottleneck = bottleneckNodes.has(n.id);
                 const glowClass = isBottleneck ? ' bottleneck-glow' : '';
-                const baseClass =
-                    n.className?.replace(' bottleneck-glow', '') || '';
-                return { ...n, className: baseClass + glowClass };
-            }),
-        );
+                const baseClass = n.className?.replace(' bottleneck-glow', '') || '';
+                const targetClassName = (baseClass + glowClass).trim();
+                
+                if (n.className === targetClassName) return n;
+                changed = true;
+                return { ...n, className: targetClassName };
+            });
+            return changed ? next : nds;
+        });
     }, [bottleneckNodes, setNodes]);
 
     const onUpdateNode = useCallback(
@@ -531,6 +571,7 @@ export function ArchitectureCanvas() {
             latency?: NodeLatencyConfig,
             routingStrategy?: 'broadcast' | 'load-balance',
             disabled?: boolean,
+            errorRate?: number
         ) => {
             setNodes((nds) =>
                 nds.map((n) => {
@@ -548,6 +589,7 @@ export function ArchitectureCanvas() {
                                 latency: latency ?? archNode.data.latency,
                                 routingStrategy: routingStrategy ?? archNode.data.routingStrategy,
                                 disabled: disabled !== undefined ? disabled : archNode.data.disabled,
+                                errorRate: errorRate !== undefined ? errorRate : archNode.data.errorRate,
                             },
                         } as ArchitectureFlowNode;
                     }
@@ -742,6 +784,19 @@ export function ArchitectureCanvas() {
         a.click();
         URL.revokeObjectURL(url);
     }, [projectNotes]);
+
+    const handleDownloadExplanation = useCallback(() => {
+        if (!explanation) return;
+        const blob = new Blob([explanation], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `architecture-flow-explanation.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, [explanation]);
 
     const handleDownloadSecurityReport = useCallback(() => {
         if (!securityReviewResults) return;
@@ -1004,6 +1059,28 @@ export function ArchitectureCanvas() {
                                                 </button>
                                             </div>
 
+                                            {/* Explain Flow */}
+                                            <div className="border-[3px] border-[#161616] p-4 bg-white shadow-[4px_4px_0_#161616] flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex items-center gap-1.5 mb-2">
+                                                        <div className="bg-[#9cf57a] p-1.5 border-[2px] border-[#161616] shrink-0">
+                                                            <BookOpen size={16} strokeWidth={3} className="text-[#161616]" />
+                                                        </div>
+                                                        <h3 className="font-black uppercase text-sm leading-tight">Explain Flow</h3>
+                                                    </div>
+                                                    <p className="text-xs text-gray-600 font-medium mb-4">Generate a simple English walkthrough of the entire packet lifecycle.</p>
+                                                </div>
+                                                <button
+                                                    className="neo-button w-full bg-[#161616] text-white px-2 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
+                                                    onClick={() => {
+                                                        setIsExplainModalOpen(true);
+                                                        setIsAiToolsDropdownOpen(false);
+                                                    }}
+                                                >
+                                                    Open Explanation
+                                                </button>
+                                            </div>
+
                                             {/* Security Review */}
                                             <div className="border-[3px] border-[#161616] p-4 bg-white shadow-[4px_4px_0_#161616] flex flex-col justify-between">
                                                 <div>
@@ -1023,6 +1100,28 @@ export function ArchitectureCanvas() {
                                                     }}
                                                 >
                                                     Open Scanner
+                                                </button>
+                                            </div>
+
+                                            {/* AI Experiments */}
+                                            <div className="border-[3px] border-[#161616] p-4 bg-white shadow-[4px_4px_0_#161616] flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex items-center gap-1.5 mb-2">
+                                                        <div className="bg-[#5de2e7] p-1.5 border-[2px] border-[#161616] shrink-0">
+                                                            <Activity size={16} strokeWidth={3} className="text-[#161616]" />
+                                                        </div>
+                                                        <h3 className="font-black uppercase text-sm leading-tight">AI Experiments</h3>
+                                                    </div>
+                                                    <p className="text-xs text-gray-600 font-medium mb-4">Run automated parameter sweeps and chaos scenarios.</p>
+                                                </div>
+                                                <button
+                                                    className="neo-button w-full bg-[#161616] text-white px-2 py-2 font-black uppercase text-xs border-[3px] border-[#161616] hover:bg-gray-800 transition-colors"
+                                                    onClick={() => {
+                                                        setIsExperimentModalOpen(true);
+                                                        setIsAiToolsDropdownOpen(false);
+                                                    }}
+                                                >
+                                                    Open Sweeper
                                                 </button>
                                             </div>
 
@@ -1488,6 +1587,12 @@ export function ArchitectureCanvas() {
                                 edges={edges}
                                 onUpdateNode={onUpdateNode}
                                 technologies={technologies}
+                                onDeleteNode={(id) => {
+                                    setNodes((nds) => nds.filter((n) => n.id !== id));
+                                    // Also remove any connected edges
+                                    setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+                                    setPropertiesNodeId(undefined);
+                                }}
                                 onClose={() => {
                                     setPropertiesNodeId(undefined);
                                 }}
@@ -1778,7 +1883,11 @@ export function ArchitectureCanvas() {
                             <div className={`absolute bottom-4 right-4 z-50 flex items-center gap-3 ${propertiesNodeId || propertiesEdgeId || infoData ? 'hidden' : ''}`}>
                                 <button
                                     onClick={() => setIsLogWindowOpen(true)}
-                                    className="neo-button flex h-10 w-10 items-center justify-center bg-[#161616] text-[#5de2e7] border-[3px] border-[#161616] shadow-[4px_4px_0_#5de2e7] transition-transform hover:-translate-y-1 hover:translate-x-1 hover:shadow-[0_0_0_#5de2e7]"
+                                    className={`neo-button flex h-10 w-10 items-center justify-center border-[3px] border-[#161616] transition-transform hover:-translate-y-1 hover:translate-x-1 hover:shadow-[0_0_0_#5de2e7] ${
+                                        isLogGlowing 
+                                            ? 'bg-[#ff6b6b] text-white shadow-[0_0_20px_8px_rgba(255,107,107,0.6)] animate-pulse' 
+                                            : 'bg-[#161616] text-[#5de2e7] shadow-[4px_4px_0_#5de2e7]'
+                                    }`}
                                     title="Open Process & Drop Logs"
                                     type="button"
                                 >
@@ -1836,7 +1945,7 @@ export function ArchitectureCanvas() {
 
                                         <div>
                                             <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#ff4fa3] text-white px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
-                                                ✨ The AI Architect Tools
+                                                ? The AI Architect Tools
                                             </h3>
                                             <p className="mb-3 text-sm text-[#161616] font-medium">Architecture Studio has an integrated Senior Principal Engineer. Let the AI do the heavy lifting!</p>
                                             <ul className="list-disc space-y-2 pl-4 text-sm font-bold">
@@ -1844,13 +1953,19 @@ export function ArchitectureCanvas() {
                                                     <span className="text-[#ff4fa3]">Prompt-to-Architecture:</span> Click the sparkles icon in the header. Type a description like "E-commerce backend with Postgres and Kafka", and the AI will generate the entire diagram, including nodes, wires, and internal logic routing.
                                                 </li>
                                                 <li>
-                                                    <span className="text-[#ff4fa3]">Security Review:</span> Click the shield icon. The AI will scan your architecture to find missing authentication, network vulnerabilities, bottlenecks, and single points of failure.
+                                                    <span className="text-[#ff4fa3]">Security & Reliability Review:</span> Click the shield icon. The AI will scan your architecture to find missing authentication, network vulnerabilities, bottlenecks, and single points of failure.
                                                 </li>
                                                 <li>
-                                                    <span className="text-[#ff4fa3]">Logic Tester:</span> Click the test tube icon. The AI will run a deep architectural scan to trace logic flow and find infinite loops, routing black holes, protocol mismatches, and missing fallbacks.
+                                                    <span className="text-[#ff4fa3]">Logic Flow Tester:</span> Click the test tube icon. The AI runs a deep architectural scan to trace logic flow and find infinite loops, routing black holes, protocol mismatches, and missing fallbacks.
                                                 </li>
                                                 <li>
-                                                    <span className="text-[#ff4fa3]">✨ Auto-Resolve:</span> A smart AI repair engine! Whenever the <b>System Watchdog</b> detects a bottleneck at runtime, or the <b>Security / Logic Testers</b> find a vulnerability, click the <span className="bg-[#5de2e7] border-2 border-[#161616] px-1">✨ Auto Resolve</span> button. The AI will instantly analyze the problem, generate a patch, and physically fix the architecture on the canvas (injecting Queues, rewiring connections, handling bidirectional responses, or tweaking cache rates).
+                                                    <span className="text-[#ff4fa3]">Chaos Parameter Sweeper:</span> Click the AI Tools Dropdown, then "Open Sweeper". The AI acts as a Chaos Monkey, systematically breaking your system (spiking latency, crashing nodes) across an infinite turn-based experimental loop. It lets you choose experiments, runs physics simulations, and generates a beautiful interactive PDF report!
+                                                </li>
+                                                <li>
+                                                    <span className="text-[#ff4fa3]">Explain Architecture:</span> The AI can read any complex system diagram and write a plain-english architectural walkthrough of exactly how the data flows from start to finish.
+                                                </li>
+                                                <li>
+                                                    <span className="text-[#ff4fa3]">? Auto-Resolve:</span> A smart AI repair engine! Whenever the <b>System Watchdog</b> detects a bottleneck at runtime, or the AI testers find a vulnerability, click the <span className="bg-[#5de2e7] border-2 border-[#161616] px-1">? Auto Resolve</span> button. The AI will instantly generate a patch and physically fix the architecture.
                                                 </li>
                                             </ul>
                                         </div>
@@ -2625,6 +2740,52 @@ export function ArchitectureCanvas() {
                         </div>
                     </div>
                 )}
+                
+                <ExperimentModal
+                    key={`experiment-${experimentResetKey}`}
+                    isOpen={isExperimentModalOpen}
+                    onClose={() => setIsExperimentModalOpen(false)}
+                    nodes={nodes as ArchitectureFlowNode[]}
+                    setNodes={setNodes as any}
+                    edges={edges}
+                    setEdges={setEdges}
+                    metrics={metrics}
+                    isPlaying={isPlaying}
+                    setIsPlaying={setIsPlaying}
+                    maxInFlight={maxInFlight}
+                    setMaxInFlight={setMaxInFlight}
+                    totalLimit={totalLimit}
+                    setTotalLimit={setTotalLimit}
+                    playbackSpeed={playbackSpeed}
+                    setPlaybackSpeed={setPlaybackSpeed}
+                    requestsPerSecond={requestsPerSecond}
+                    setRequestsPerSecond={setRequestsPerSecond}
+                    nodeQueues={nodeQueues}
+                    edgePulses={edgePulses}
+                    bottleneckNodes={bottleneckNodes}
+                    resetSimulationState={resetSimulationState}
+                    onFitView={() => {
+                        if (flowInstance) {
+                            flowInstance.fitView({ padding: 0.2, duration: 800 });
+                        }
+                    }}
+                />
+                
+                <ExplainFlowModal
+                    isOpen={isExplainModalOpen}
+                    onClose={() => setIsExplainModalOpen(false)}
+                    onCancel={() => {
+                        cancelExplanation();
+                        setIsExplainModalOpen(false);
+                    }}
+                    onGenerate={() => generateExplanation(nodes as ArchitectureFlowNode[], edges as EventFlowEdge[])}
+                    onRegenerate={() => generateExplanation(nodes as ArchitectureFlowNode[], edges as EventFlowEdge[])}
+                    onDownload={handleDownloadExplanation}
+                    onClear={clearExplanation}
+                    explanation={explanation}
+                    isExplaining={isExplaining}
+                    error={explainError}
+                />
                 
                 <SecurityReviewModal
                     isOpen={isSecurityReviewModalOpen}

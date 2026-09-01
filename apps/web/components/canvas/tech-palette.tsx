@@ -23,10 +23,20 @@ const iconByCategory: Record<string, React.ComponentType<{ size?: number; stroke
 
 function CategoryFolder({ category, items, defaultOpen = false, onShowInfo }: { category: string, items: TechnologyDefinition[], defaultOpen?: boolean, onShowInfo: (tech: TechnologyDefinition) => void }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     setIsOpen(defaultOpen);
   }, [defaultOpen]);
+
+  // To prevent hydration mismatch when client has locally stored custom tech
+  if (!isMounted) {
+    return null; // Or a skeleton/placeholder if preferred
+  }
 
   return (
     <div className="border-b-[3px] border-[#161616] last:border-b-0">

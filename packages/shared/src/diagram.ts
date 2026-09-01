@@ -45,6 +45,7 @@ export interface DiagramNode {
         description?: string;
         logicSteps?: LogicStep[];
         processingDelay?: number;
+        errorRate?: number;
         latency?: NodeLatencyConfig;
         routingStrategy?: 'broadcast' | 'load-balance';
     };

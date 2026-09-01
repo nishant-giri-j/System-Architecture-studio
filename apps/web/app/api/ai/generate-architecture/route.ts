@@ -50,7 +50,8 @@ ARCHITECTURAL RULES (STRICTLY ENFORCED — violating these produces broken desig
 7. Every node MUST be connected — no orphan nodes
 
 LOGIC STEP RULES (CRITICAL — this defines what each node ACTUALLY DOES):
-Every node MUST have logicSteps that model its REAL-WORLD behavior. When an intermediary node calls a downstream dependency, it MUST explicitly handle the response back.
+Every node MUST have logicSteps that model its REAL-WORLD behavior. 
+CRITICAL RULE: The simulation engine is BIDIRECTIONAL. If a node receives a request, it MUST have a 'reply' step to send the response back to the caller! If you omit the 'reply' step, the packet gets stuck in a routing black hole and the simulation breaks.
 
 • Load Balancer / API Gateway:
   - forward(always) → downstream service(s)
@@ -58,23 +59,24 @@ Every node MUST have logicSteps that model its REAL-WORLD behavior. When an inte
   - reply(on-error) — pass errors back up to client
   - MUST set routingStrategy to "load-balance"
 
-• Application Service / Microservice:
+• Application Service / Microservice / API:
   - forward(always) → downstream dependencies (cache, DB, queue)
-  - reply(on-success) — pass successful responses back upstream
+  - reply(always) or reply(on-success) — YOU MUST PASS THE RESPONSE BACK UPSTREAM TO THE CALLER!
   - reply(on-error) — pass errors back upstream
   - MUST set routingStrategy to "broadcast" (default)
 
 • Cache (Redis, Memcached, etc.):
   - simulate-cache with hitRate (70-95% is realistic)
-  - reply(on-hit) — return cached data immediately
+  - reply(on-hit) — return cached data immediately back to caller
   - forward(on-miss) → the backing database
-  - reply(on-success) — pass DB response back upstream
+  - reply(on-success) — pass DB response back upstream to caller
 
 • Database (PostgreSQL, MongoDB, etc.):
-  - reply(always) — process query and return data
+  - reply(always) — process query and RETURN DATA BACK TO CALLER! (Do not omit this!)
 
 • Message Queue / Event Stream (Kafka, RabbitMQ, etc.):
   - forward(always) → consumer/worker service(s) for each subscriber
+  - reply(on-success) — ACK back to the publisher
 
 • CDN:
   - simulate-cache with hitRate (90-99%)
@@ -83,11 +85,11 @@ Every node MUST have logicSteps that model its REAL-WORLD behavior. When an inte
   - reply(on-success) — pass origin response back to client
 
 • Auth Service:
-  - forward(on-success) → downstream service
-  - reply(on-error) — return 401/403 back to client
+  - reply(always) or reply(on-success) → return auth result to caller
 
 • Worker / Background Service:
-  - forward(always) → result destination or reply(always)
+  - forward(always) → result destination (like a DB)
+  - reply(always) → YOU MUST ACKNOWLEDGE THE QUEUE MESSAGE by replying to the caller (the queue)!
 
 IMPORTANT: targetNodeId in logicSteps MUST reference another node's id that this node connects to via an edge in your output.
 

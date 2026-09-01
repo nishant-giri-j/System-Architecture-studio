@@ -991,21 +991,36 @@ export function useSimulation(
                 else if (tech.category === 'data') queueLimit = 100;
                 
                 const q = nodeQueuesRef.current[arrivedAtId] || [];
-                if (q.length >= queueLimit) {
-                    if (!warnedNodesRef.current.has(`${node.id}-overflow`)) {
+                const errorRate = node.data.errorRate ?? 0;
+                const isCrash = errorRate > 0 && Math.random() < errorRate;
+
+                if (isCrash || q.length >= queueLimit) {
+                    const isQueueOverflow = !isCrash;
+
+                    if (isQueueOverflow && !warnedNodesRef.current.has(`${node.id}-overflow`)) {
                         warnedNodesRef.current.add(`${node.id}-overflow`);
                         if (onWarning) onWarning({ id: crypto.randomUUID(), type: 'dropped', message: `Queue Overflow: ${node.data.label} queue is full (${queueLimit}). Dropping packets with 503 Service Unavailable!`, timestamp: new Date(), nodeId: node.id });
                     }
                     
                     updateMetricsNow((m) => ({ ...m, droppedRequests: m.droppedRequests + 1, totalErrors: m.totalErrors + 1 }));
-                    addLog(`[${node.data.label}] Node overloaded, queue full (503)`, '#ff6b6b', {
+                    
+                    const logMessage = isCrash ? `[${node.data.label}] Node CRASHED/DROPPED packet (AI Error Rate: ${(errorRate*100).toFixed(0)}%)` : `[${node.data.label}] Node overloaded, queue full (503)`;
+                    addLog(logMessage, '#ff6b6b', {
                         eventType: 'error',
                         requestId: pulse.requestId,
                         nodeId: node.id,
                     });
                     
                     if (pulse.callerId) {
-                        reply('cache-miss', '#ff6b6b', pulse.callerId, 503);
+                        reply('cache-miss', '#ff6b6b', pulse.callerId, isCrash ? 502 : 503);
+                    } else {
+                        // Crucial fix: If root node drops/overflows, cleanly finalize the flight state!
+                        updateMetricsNow(m => ({ ...m, inFlightRequests: Math.max(0, m.inFlightRequests - 1), completedRequests: m.completedRequests + 1 }));
+                        const req = requestLatencies.current[pulse.requestId];
+                        if (req) {
+                            req.lifecycle = 'failed';
+                            delete requestLatencies.current[pulse.requestId];
+                        }
                     }
                     return;
                 }

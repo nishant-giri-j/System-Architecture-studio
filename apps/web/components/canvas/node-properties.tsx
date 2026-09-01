@@ -22,11 +22,14 @@ interface NodePropertiesProps {
         latency?: NodeLatencyConfig,
         routingStrategy?: 'broadcast' | 'load-balance',
         disabled?: boolean,
+        errorRate?: number
     ) => void;
     onClose: () => void;
+    onDeleteNode?: (nodeId: string) => void;
 }
 
 export function NodePropertiesPanel({
+    onDeleteNode,
     nodeId,
     nodes,
     edges,
@@ -41,6 +44,24 @@ export function NodePropertiesPanel({
     const [condition, setCondition] = useState<LogicCondition>('always');
     const [hitRate, setHitRate] = useState<number>(80);
     const [editingStepId, setEditingStepId] = useState<string | null>(null);
+
+    const [draftSteps, setDraftSteps] = useState<LogicStep[]>([]);
+    const [draftDelay, setDraftDelay] = useState<number>(0);
+    const [draftLatency, setDraftLatency] = useState<NodeLatencyConfig>({});
+    const [draftStrategy, setDraftStrategy] = useState<'broadcast' | 'load-balance'>('broadcast');
+    const [draftDisabled, setDraftDisabled] = useState<boolean>(false);
+    const [draftErrorRate, setDraftErrorRate] = useState<number>(0);
+
+    useEffect(() => {
+        if (node) {
+            setDraftSteps(node.data.logicSteps || []);
+            setDraftDelay(node.data.processingDelay || 0);
+            setDraftLatency(node.data.latency || {});
+            setDraftStrategy(node.data.routingStrategy || 'broadcast');
+            setDraftDisabled(node.data.disabled || false);
+            setDraftErrorRate(node.data.errorRate || 0);
+        }
+    }, [nodeId, node?.data]);
 
     // Get nodes connected via any edges from the current node
     const connectedTargets = useMemo(() => {
@@ -76,17 +97,14 @@ export function NodePropertiesPanel({
 
     if (!node) return null;
 
-    const steps = node.data.logicSteps || [];
-    const latency = node.data.latency || {};
+    const steps = draftSteps;
+    const latency = draftLatency;
 
     const updateLatency = (
         field: keyof NodeLatencyConfig,
         value: string | number,
     ) => {
-        onUpdateNode(node.id, steps, node.data.processingDelay, {
-            ...latency,
-            [field]: value,
-        }, node.data.routingStrategy);
+        setDraftLatency(prev => ({ ...prev, [field]: value }));
     };
 
     const handleSaveStep = () => {
@@ -104,7 +122,7 @@ export function NodePropertiesPanel({
                       }
                     : s,
             );
-            onUpdateNode(node.id, updatedSteps, node.data.processingDelay, node.data.latency, node.data.routingStrategy);
+            setDraftSteps(updatedSteps);
             setEditingStepId(null);
         } else {
             const newStep: LogicStep = {
@@ -114,13 +132,7 @@ export function NodePropertiesPanel({
                 targetNodeId: action === 'forward' ? targetId : undefined,
                 hitRate: action === 'simulate-cache' ? hitRate : undefined,
             };
-            onUpdateNode(
-                node.id,
-                [...steps, newStep],
-                node.data.processingDelay,
-                node.data.latency,
-                node.data.routingStrategy,
-            );
+            setDraftSteps([...steps, newStep]);
         }
     };
 
@@ -133,13 +145,7 @@ export function NodePropertiesPanel({
     };
 
     const handleDeleteStep = (stepId: string) => {
-        onUpdateNode(
-            node.id,
-            steps.filter((s) => s.id !== stepId),
-            node.data.processingDelay,
-            node.data.latency,
-            node.data.routingStrategy,
-        );
+        setDraftSteps(steps.filter(s => s.id !== stepId));
         if (editingStepId === stepId) setEditingStepId(null);
     };
 
@@ -246,36 +252,22 @@ export function NodePropertiesPanel({
     );
 
     return (
-        <div className="neo-panel absolute right-4 top-4 bottom-4 z-[9999] flex w-80 flex-col overflow-hidden bg-white shadow-[8px_8px_0_#161616]">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onPointerDown={() => onClose()}>
+            <div className="neo-panel w-full max-w-md bg-white flex flex-col shadow-[12px_12px_0_#161616] max-h-[85vh]" onPointerDown={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b-[3px] border-[#161616] bg-[#5de2e7] p-3">
                 <h3 className="font-black uppercase truncate pr-2">
                     {node.data.label} {technologies.find(t => t.id === node.data.technologyId)?.category === 'client' ? 'Settings' : 'Logic'}
                 </h3>
-                <button
-                    onClick={onClose}
-                    className="neo-button flex-shrink-0 p-1 hover:bg-white"
-                >
-                    <X size={16} strokeWidth={3} />
-                </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 bg-[#f8f9fa]">
+                <button onClick={onClose} className="hover:bg-black/10 p-1 transition-colors border-[2px] border-transparent hover:border-[#161616]"><X size={20} strokeWidth={3} /></button></div><div className="flex-1 overflow-y-auto p-4 bg-[#f8f9fa] custom-scrollbar">
                 {technologies.find(t => t.id === node.data.technologyId)?.category === 'client' && (
                     <div className="mb-6 border-[3px] border-[#161616] p-3 shadow-[4px_4px_0_#161616] bg-[#ffde59]">
                         <label className="flex items-center gap-3 text-sm font-black uppercase cursor-pointer">
                             <input
                                 type="checkbox"
                                 className="w-5 h-5 accent-[#ff4fa3]"
-                                checked={!node.data.disabled}
+                                checked={!draftDisabled}
                                 onChange={(e) => {
-                                    onUpdateNode(
-                                        node.id,
-                                        steps,
-                                        node.data.processingDelay,
-                                        node.data.latency,
-                                        node.data.routingStrategy,
-                                        !e.target.checked
-                                    );
+                                    setDraftDisabled(!e.target.checked);
                                 }}
                             />
                             <span>Enable Traffic Generation</span>
@@ -294,20 +286,14 @@ export function NodePropertiesPanel({
                                 min="0"
                                 max="5000"
                                 step="100"
-                                value={node.data.processingDelay || 0}
+                                value={draftDelay}
                                 onChange={(e) =>
-                                    onUpdateNode(
-                                        node.id,
-                                        steps,
-                                        parseInt(e.target.value),
-                                        node.data.latency,
-                                        node.data.routingStrategy
-                                    )
+                                    setDraftDelay(parseInt(e.target.value))
                                 }
                                 className="w-full accent-[#ff4fa3]"
                             />
                             <span className="w-16 text-right whitespace-nowrap text-[#ff4fa3]">
-                                {node.data.processingDelay || 0}ms
+                                {draftDelay}ms
                             </span>
                         </div>
                         <span className="text-[10px] font-bold text-[#161616]/70 leading-tight mt-1 normal-case">
@@ -317,15 +303,39 @@ export function NodePropertiesPanel({
                     </label>
                 </div>
 
+                
+                <div className="mb-6 border-[3px] border-[#161616] p-3 shadow-[4px_4px_0_#161616] bg-white">
+                    <label className="flex flex-col gap-1 text-sm font-black uppercase">
+                        Simulated Error / Drop Rate
+                        <div className="flex items-center gap-2 mt-2">
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={draftErrorRate}
+                                onChange={(e) => setDraftErrorRate(parseFloat(e.target.value))}
+                                className="w-full accent-[#ff6b6b]"
+                            />
+                            <span className="w-16 text-right whitespace-nowrap text-[#ff6b6b]">
+                                {Math.round(draftErrorRate * 100)}%
+                            </span>
+                        </div>
+                        <span className="text-[10px] font-bold text-[#161616]/70 leading-tight mt-1 normal-case">
+                            Simulate packet loss or a node crash. At 100%, all incoming packets are instantly destroyed.
+                        </span>
+                    </label>
+                </div>
+
                 <div className="mb-6 border-[3px] border-[#161616] p-3 shadow-[4px_4px_0_#161616] bg-white">
                     <label className="flex flex-col gap-1 text-sm font-black uppercase">
                         Routing Strategy
                         <select
                             className="neo-input p-1 mt-2 font-bold"
-                            value={node.data.routingStrategy || 'broadcast'}
+                            value={draftStrategy}
                             onChange={(e) => {
                                 const newStrategy = e.target.value as 'broadcast' | 'load-balance';
-                                onUpdateNode(node.id, steps, node.data.processingDelay, node.data.latency, newStrategy);
+                                setDraftStrategy(newStrategy);
                             }}
                         >
                             <option value="broadcast">Broadcast (Default)</option>
@@ -537,8 +547,35 @@ export function NodePropertiesPanel({
                         </h4>
                         {renderForm(false)}
                     </div>
+
                 )}
             </div>
+
+            <div className="border-t-[3px] border-[#161616] bg-gray-50 px-4 py-3 flex gap-3">
+                <button 
+                    onClick={() => {
+                        onUpdateNode(node.id, draftSteps, draftDelay, draftLatency, draftStrategy, draftDisabled, draftErrorRate);
+                        onClose();
+                    }}
+                    className="flex-1 neo-button bg-[#5de2e7] hover:bg-[#4bcad0] py-2 flex items-center justify-center gap-2 text-sm font-black tracking-wide"
+                >
+                    <Save className="w-4 h-4" strokeWidth={3}/> SAVE CHANGES
+                </button>
+                
+                {onDeleteNode && (
+                    <button 
+                        onClick={() => {
+                            onDeleteNode(node.id);
+                            onClose();
+                        }}
+                        className="neo-button bg-[#ff6b6b] hover:bg-[#e85b5b] px-4 flex items-center justify-center text-white"
+                        title="Delete Node"
+                    >
+                        <Trash2 className="w-4 h-4" strokeWidth={3} />
+                    </button>
+                )}
+            </div>
+        </div>
         </div>
     );
 }
