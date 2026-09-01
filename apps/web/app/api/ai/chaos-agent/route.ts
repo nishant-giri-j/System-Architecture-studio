@@ -26,19 +26,16 @@ export async function POST(req: Request) {
             }
         }
 
-        const result = await generateObject({
-            model: google(process.env.AI_MODEL || 'gemini-2.5-pro'),
-            system: `You are an elite Autonomous Chaos Monkey & Architecture Designer.
-Your job is to read a user's natural language request, analyze their system, and iteratively propose structured experiments.
+        const model = google(process.env.AI_MODEL || 'gemini-3.1-pro-preview');
 
-You run in a loop. You will be provided with the user's prompt and a HISTORY of experiments you have already tried.
-- Output 'PROPOSE_EXPERIMENTS' to provide the user with 2 to 3 distinct test plan options for their next step. You must ALWAYS propose more experiments unless the user explicitly forced a stop.
-- ONLY output 'CONCLUDE' if the prompt explicitly says 'THE USER HAS HALTED FURTHER EXPERIMENTS'. Do not conclude on your own.
+        const { object } = await generateObject({
+            model,
+            system: `You are an expert Chaos Engineering and System Architecture AI.
+Your job is to propose experiments to break or scale the user's system, OR conclude if requested or if you've exhausted hypotheses.
 
-Available Nodes in the user's architecture:
+CURRENT ARCHITECTURE:
 ${nodeSummary}
 
-Available Edges (Wiring):
 ${edgeSummary}
 
 Valid Target Fields you can mutate in UPDATE_NODE:
@@ -52,11 +49,14 @@ Valid Target Fields you can mutate in UPDATE_NODE:
 CRITICAL RULES:
 1. Structural & Hardware Mutations: You have total control. You can crash a node via OOM by mutating "hardware.memoryMb" to 128. You can cause network congestion by mutating "bandwidthCapacity". You can DELETE_NODE or DELETE_EDGE. You can rewrite routing by targeting "routingStrategy".
 2. Dynamic Traffic & Payloads: You can use the 'UPDATE_TRAFFIC' action to launch DDoS attacks or large file uploads. For UPDATE_TRAFFIC, the values array must contain objects like: {"rps": 5000, "payloadKb": 500}.
-3. Spawning Nodes: You can use 'ADD_NODE' to create infrastructure. For ADD_NODE, the values array must contain objects like: {"label": "Fallback DB", "technologyId": "redis", "connectedTo": "node-123", "hardware": {"memoryMb": 2048, "cpuCores": 4}, "logicSteps": [{"id": "ls1", "type": "db_query", "name": "Select", "targetNodeId": null}]}.
-4. Spawning Edges: You can use 'ADD_EDGE' to wire nodes. Emit multiple ADD_EDGE mutations if you want bidirectional wiring (e.g. A to B, B to C). For ADD_EDGE, values: {"source": "node-A", "target": "node-B", "protocol": "HTTP"}.
-5. Dynamic Steps: Every plan has a \`stepCount\` (e.g. 3). Every mutation MUST provide an array of \`values\` exactly matching the \`stepCount\` length. (e.g. [1024, 512, 128] for memory draining).
-6. Learn from History: Do NOT repeat an experiment that is already in the history.
-7. Analysis: For EVERY response, provide an 'analysis' string.
+3. Spawning Nodes (ADD_NODE): You MUST format the ADD_NODE value EXACTLY like this JSON object:
+{"label": "Auth Middleware", "technologyId": "nodejs", "incomingConnections": ["gateway-id"], "outgoingConnections": ["service-id"], "hardware": { "memoryMb": 2048, "cpuCores": 2 }, "logicSteps": [{ "id": "s1", "action": "forward", "targetNodeId": "service-id", "condition": "always" }, { "id": "s2", "action": "reply", "condition": "always" }]}
+NEVER use a flat array or stringified JSON for logicSteps or hardware! They MUST be proper nested JSON objects! ALWAYS explicitly define 'targetId' in the mutation so you can reference it.
+4. Integrating Nodes: If you ADD_NODE, it sits idle unless upstream nodes route traffic to it! Use 'UPDATE_NODE' targeting "logicSteps" on upstream nodes to rewrite their logic array to include a 'forward' step pointing to your new node's targetId. You are given the current LogicSteps; supply the FULL modified array in your mutation value!
+5. Logic Step Engine (CRITICAL): The simulation is bidirectional! If a node receives a request, it MUST have a 'reply' step (e.g. {"id":"r1", "action":"reply", "condition":"always"}) to send the response back! If you omit 'reply', packets get stuck in a routing black hole! Use 'forward' to send packets to downstream dependencies.
+6. Dynamic Steps: Every plan has a \`stepCount\` (e.g. 3). Every mutation MUST provide an array of \`values\` exactly matching the \`stepCount\` length.
+7. Learn from History: Do NOT repeat an experiment that is already in the history.
+8. Analysis: For EVERY response, provide an 'analysis' string.
 `,
 
             prompt: `USER PROMPT: ${prompt}${historyPrompt}`,
@@ -81,7 +81,7 @@ CRITICAL RULES:
             })
         });
 
-        return Response.json(result.object);
+        return Response.json(object);
     } catch (e: any) {
         return Response.json({ error: e.message }, { status: 500 });
     }

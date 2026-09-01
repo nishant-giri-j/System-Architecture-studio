@@ -853,14 +853,32 @@ export function ExperimentModal({
                                 currentObj = currentObj[k];
                             }
                             const lastKey = keys[keys.length - 1] as string;
-                            currentObj[lastKey] = val;
+                            let finalVal = val;
+                            if (m.targetField === 'logicSteps' && Array.isArray(val)) {
+                                finalVal = val.map((step: any) => {
+                                    if (typeof step === 'string') {
+                                        try { 
+                                            const parsed = JSON.parse(step);
+                                            if (typeof parsed === 'object' && parsed !== null) return parsed;
+                                        } catch (e) { return null; }
+                                        return null;
+                                    }
+                                    return step;
+                                }).filter((step: any) => step && typeof step === 'object' && step.action);
+                            }
+                            currentObj[lastKey] = finalVal;
                             return { ...n, data: newData };
                         }
                         return n;
                     });
                 } else if (m.action === 'DELETE_NODE' && m.targetId) {
                     if (val) {
-                        nextNodes = nextNodes.filter((n: any) => n.id !== m.targetId);
+                        nextNodes = nextNodes.map((n: any) => {
+                            if (n.id === m.targetId) {
+                                return { ...n, data: { ...n.data, isExperimentDeleted: true, isOffline: true } };
+                            }
+                            return n;
+                        });
                         nextEdges = nextEdges.filter((e: any) => e.source !== m.targetId && e.target !== m.targetId);
                     }
                 } else if (m.action === 'DELETE_EDGE' && m.targetId) {
@@ -875,6 +893,39 @@ export function ExperimentModal({
                         // Try to position it reasonably (default or relative to connectedTo if passed)
                         let x = 500, y = 500;
                         
+                        let rawLogicSteps = val.logicSteps && Array.isArray(val.logicSteps) ? val.logicSteps : [];
+                        
+                        // Sanitize: Sometimes the AI stringifies the inner objects or outputs flat token arrays
+                        let initialLogicSteps = rawLogicSteps.map((step: any) => {
+                            if (typeof step === 'string') {
+                                try { 
+                                    const parsed = JSON.parse(step);
+                                    if (typeof parsed === 'object' && parsed !== null) return parsed;
+                                } catch (e) { return null; }
+                                return null;
+                            }
+                            return step;
+                        }).filter((step: any) => step && typeof step === 'object' && step.action);
+                        
+                        // AUTO-GENERATE LOGIC IF AI FORGOT OR PROVIDED NONE
+                        if (initialLogicSteps.length === 0) {
+                            if (val.outgoingConnections && Array.isArray(val.outgoingConnections)) {
+                                val.outgoingConnections.forEach((outId: string, i: number) => {
+                                    initialLogicSteps.push({
+                                        id: `auto-fwd-${i}`,
+                                        action: 'forward',
+                                        targetNodeId: outId,
+                                        condition: 'always'
+                                    });
+                                });
+                            }
+                            initialLogicSteps.push({
+                                id: 'auto-reply',
+                                action: 'reply',
+                                condition: 'always'
+                            });
+                        }
+
                         nextNodes.push({
                             id: newNodeId,
                             type: 'architecture',
@@ -887,22 +938,84 @@ export function ExperimentModal({
                                 errorRate: 0,
                                 latency: {},
                                 routingStrategy: 'broadcast',
-                                logicSteps: val.logicSteps || [],
-                                hardware: val.hardware || undefined,
-                                cacheHitRate: val.cacheHitRate || 0
+                                logicSteps: initialLogicSteps,
+                                hardware: (val.hardware && typeof val.hardware === 'object' && !Array.isArray(val.hardware)) ? val.hardware : undefined,
+                                cacheHitRate: val.cacheHitRate || 0,
+                                isExperimentAdded: true
                             }
                         });
                         
-                        // Auto-connect if connectedTo was provided
-                        if (val.connectedTo) {
+                        // Auto-connect edges and auto-patch upstream logic
+                        if (val.incomingConnections && Array.isArray(val.incomingConnections)) {
+                            val.incomingConnections.forEach((srcId: string, i: number) => {
+                                nextEdges.push({
+                                    id: `added-edge-in-${mIdx}-${i}`,
+                                    source: srcId,
+                                    target: newNodeId,
+                                    sourceHandle: 'right',
+                                    targetHandle: 'left',
+                                    type: 'event',
+                                    data: { protocol: 'HTTP', rps: 1 }
+                                });
+
+                                // Auto-patch the upstream node to actually route traffic to our new node!
+                                nextNodes = nextNodes.map((n: any) => {
+                                    if (n.id === srcId) {
+                                        const newLogic = [...(n.data.logicSteps || [])];
+                                        const alreadyHasForward = newLogic.some((ls: any) => ls.action === 'forward' && ls.targetNodeId === newNodeId);
+                                        if (!alreadyHasForward) {
+                                            newLogic.unshift({
+                                                id: `auto-in-fwd-${newNodeId}-${i}`,
+                                                action: 'forward',
+                                                targetNodeId: newNodeId,
+                                                condition: 'always'
+                                            });
+                                        }
+                                        return { ...n, data: { ...n.data, logicSteps: newLogic } };
+                                    }
+                                    return n;
+                                });
+                            });
+                        } else if (val.connectedTo) {
                             nextEdges.push({
-                                id: m.targetId ? `edge-${m.targetId}` : `added-edge-${mIdx}`,
+                                id: `added-edge-${mIdx}`,
                                 source: val.connectedTo,
                                 target: newNodeId,
                                 sourceHandle: 'right',
                                 targetHandle: 'left',
                                 type: 'event',
                                 data: { protocol: 'HTTP', rps: 1 }
+                            });
+
+                            nextNodes = nextNodes.map((n: any) => {
+                                if (n.id === val.connectedTo) {
+                                    const newLogic = [...(n.data.logicSteps || [])];
+                                    const alreadyHasForward = newLogic.some((ls: any) => ls.action === 'forward' && ls.targetNodeId === newNodeId);
+                                    if (!alreadyHasForward) {
+                                        newLogic.unshift({
+                                            id: `auto-in-fwd-${newNodeId}`,
+                                            action: 'forward',
+                                            targetNodeId: newNodeId,
+                                            condition: 'always'
+                                        });
+                                    }
+                                    return { ...n, data: { ...n.data, logicSteps: newLogic } };
+                                }
+                                return n;
+                            });
+                        }
+
+                        if (val.outgoingConnections && Array.isArray(val.outgoingConnections)) {
+                            val.outgoingConnections.forEach((targetId: string, i: number) => {
+                                nextEdges.push({
+                                    id: `added-edge-out-${mIdx}-${i}`,
+                                    source: newNodeId,
+                                    target: targetId,
+                                    sourceHandle: 'right',
+                                    targetHandle: 'left',
+                                    type: 'event',
+                                    data: { protocol: 'HTTP', rps: 1 }
+                                });
                             });
                         }
                     }

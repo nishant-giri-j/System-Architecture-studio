@@ -41,6 +41,8 @@ export type ArchitectureNodeData = {
     queueLength?: number;
     hardware?: { cpuCores: number; memoryMb: number; };
     bandwidthCapacity?: number;
+    isExperimentAdded?: boolean;
+    isExperimentDeleted?: boolean;
 };
 
 export type ArchitectureFlowNode = Node<ArchitectureNodeData, 'architecture'>;
@@ -148,6 +150,22 @@ function ArchitectureNodeComponent({
                 </div>
             )}
 
+            {data.isExperimentAdded && (
+                <div 
+                    className="absolute -top-4 -right-2 border-[3px] border-[#161616] bg-[#9cf57a] px-2 py-0.5 text-[10px] font-black uppercase text-[#161616] shadow-[2px_2px_0_#161616] z-20 animate-pulse"
+                >
+                    ✨ EXPERIMENT ADDED
+                </div>
+            )}
+
+            {data.isExperimentDeleted && (
+                <div 
+                    className="absolute -top-4 -right-2 border-[3px] border-[#161616] bg-[#ff6b6b] px-2 py-0.5 text-[10px] font-black uppercase text-[#fffdf5] shadow-[2px_2px_0_#161616] z-20 animate-pulse"
+                >
+                    🗑️ EXPERIMENT DELETED
+                </div>
+            )}
+
             <Handle
                 id="left"
                 type="target"
@@ -159,8 +177,13 @@ function ArchitectureNodeComponent({
             <div 
                 className={`flex flex-col bg-[#fffdf5] overflow-hidden ${shapeClasses} ${borderClasses}`}
                 style={{
-                    boxShadow: data.isHighlightedError ? '0 0 20px rgba(255, 107, 107, 0.8), 6px 6px 0 #161616' : '6px 6px 0 #161616',
-                    outline: data.isHighlightedError ? '4px solid #ff6b6b' : selected ? '4px solid #ff4fa3' : 'none',
+                    boxShadow: data.isHighlightedError ? '0 0 20px rgba(255, 107, 107, 0.8), 6px 6px 0 #161616' : 
+                               data.isExperimentAdded ? '0 0 20px rgba(156, 245, 122, 0.8), 6px 6px 0 #161616' :
+                               '6px 6px 0 #161616',
+                    outline: data.isHighlightedError ? '4px solid #ff6b6b' : 
+                             data.isExperimentAdded ? '4px dashed #9cf57a' :
+                             data.isExperimentDeleted ? '4px dashed #ff6b6b' :
+                             selected ? '4px solid #ff4fa3' : 'none',
                     outlineOffset: '2px',
                 }}
             >
