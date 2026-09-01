@@ -39,6 +39,8 @@ export type ArchitectureNodeData = {
     isOffline?: boolean;
     disabled?: boolean;
     queueLength?: number;
+    hardware?: { cpuCores: number; memoryMb: number; };
+    bandwidthCapacity?: number;
 };
 
 export type ArchitectureFlowNode = Node<ArchitectureNodeData, 'architecture'>;
@@ -147,6 +149,7 @@ function ArchitectureNodeComponent({
             )}
 
             <Handle
+                id="left"
                 type="target"
                 position={Position.Left}
                 className="!h-4 !w-4 !border-[3px] !border-[#161616] !bg-[#ffde59]"
@@ -207,6 +210,7 @@ function ArchitectureNodeComponent({
             </div>
 
             <Handle
+                id="right"
                 type="source"
                 position={Position.Right}
                 className="!h-4 !w-4 !border-[3px] !border-[#161616] !bg-[#ff4fa3]"

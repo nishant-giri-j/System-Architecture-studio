@@ -48,6 +48,11 @@ export interface DiagramNode {
         errorRate?: number;
         latency?: NodeLatencyConfig;
         routingStrategy?: 'broadcast' | 'load-balance';
+        hardware?: {
+            cpuCores: number;
+            memoryMb: number;
+        };
+        bandwidthCapacity?: number;
     };
 }
 

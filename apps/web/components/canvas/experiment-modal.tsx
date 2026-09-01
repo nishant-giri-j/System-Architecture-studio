@@ -13,8 +13,9 @@ import remarkGfm from 'remark-gfm';
 import type { Node } from '@xyflow/react';
 
 import type { ArchitectureNodeData } from './architecture-node';
+import { getLayoutedElements } from '../../lib/auto-layout';
 
-export type MutationAction = 'UPDATE_NODE' | 'DELETE_NODE' | 'ADD_NODE' | 'ADD_EDGE' | 'DELETE_EDGE';
+export type MutationAction = 'UPDATE_NODE' | 'DELETE_NODE' | 'ADD_NODE' | 'ADD_EDGE' | 'DELETE_EDGE' | 'UPDATE_TRAFFIC';
 export type ExperimentMutation = {
     action: MutationAction;
     targetId: string;
@@ -87,7 +88,7 @@ interface ExperimentModalProps {
     requestsPerSecond: number;
 
     setRequestsPerSecond: (val: number) => void;
-
+    setGlobalPayloadSize: (val: number) => void;
     nodeQueues: Record<string, any[]>;
 
     edgePulses: Record<string, any[]>;
@@ -138,16 +139,10 @@ const HistoryCharts = React.memo(({ items, nodes }: { items: any[], nodes: any[]
 
                                                                 stroke="#161616" 
 
-                                                                tick={{ fontWeight: 900, fontSize: 11, angle: -20, textAnchor: 'end', dy: 15 }}
-
+                                                                tick={{ fontWeight: 900, fontSize: 11 }}
                                                                 tickFormatter={(val) => {
-
                                                                     const numVal = Number(val);
-
-                                                                    const r = item.results.find((x: any) => x.stepIndex === numVal);
-
-                                                                    return r ? `Step ${numVal} (${r.value})` : val;
-
+                                                                    return `Step ${numVal + 1}`;
                                                                 }}
 
                                                             />
@@ -202,16 +197,10 @@ const HistoryCharts = React.memo(({ items, nodes }: { items: any[], nodes: any[]
 
                                                                 stroke="#161616" 
 
-                                                                tick={{ fontWeight: 900, fontSize: 11, angle: -20, textAnchor: 'end', dy: 15 }}
-
+                                                                tick={{ fontWeight: 900, fontSize: 11 }}
                                                                 tickFormatter={(val) => {
-
                                                                     const numVal = Number(val);
-
-                                                                    const r = item.results.find((x: any) => x.stepIndex === numVal);
-
-                                                                    return r ? `Step ${numVal} (${r.value})` : val;
-
+                                                                    return `Step ${numVal + 1}`;
                                                                 }}
 
                                                             />
@@ -323,7 +312,7 @@ export function ExperimentModal({
     requestsPerSecond,
 
     setRequestsPerSecond,
-
+    setGlobalPayloadSize,
     nodeQueues,
 
     edgePulses,
@@ -362,6 +351,7 @@ export function ExperimentModal({
     const originalEdges = useRef<any[]>([]);
 
     const originalLimits = useRef<{ maxInFlight: number, totalLimit: number, playbackSpeed: number, requestsPerSecond: number } | null>(null);
+    const hasSnapshotted = useRef(false);
 
     const runTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -423,7 +413,7 @@ export function ExperimentModal({
 
         setCurrentStep(0);
 
-        if (originalNodes.current.length > 0) { setNodes(originalNodes.current); setEdges(originalEdges.current); }
+        if (hasSnapshotted.current) { setNodes(originalNodes.current); setEdges(originalEdges.current); hasSnapshotted.current = false; }
 
         if (originalLimits.current) {
 
@@ -804,7 +794,7 @@ export function ExperimentModal({
 
             // Restore Node to Baseline immediately
 
-            if (originalNodes.current.length > 0) { setNodes(originalNodes.current); setEdges(originalEdges.current); }
+            if (hasSnapshotted.current) { setNodes(originalNodes.current); setEdges(originalEdges.current); hasSnapshotted.current = false; }
 
             if (originalLimits.current) {
 
@@ -841,12 +831,16 @@ export function ExperimentModal({
         
 
                 // 1. Apply all structural mutations
-        let nextNodes = JSON.parse(JSON.stringify(originalNodes.current.length > 0 ? originalNodes.current : nodes));
-        let nextEdges = JSON.parse(JSON.stringify(originalEdges.current.length > 0 ? originalEdges.current : edges));
+        let nextNodes = JSON.parse(JSON.stringify(hasSnapshotted.current ? originalNodes.current : nodes));
+        let nextEdges = JSON.parse(JSON.stringify(hasSnapshotted.current ? originalEdges.current : edges));
         
+        let layoutNeeded = false;
         if (plan.mutations) {
-            plan.mutations.forEach(m => {
-                const val = m.values[currentStep];
+            plan.mutations.forEach((m, mIdx) => {
+                if (m.action === 'ADD_NODE' || m.action === 'DELETE_NODE' || m.action === 'ADD_EDGE' || m.action === 'DELETE_EDGE') {
+                    layoutNeeded = true;
+                }
+                const val = m.values[currentStep] ?? m.values[m.values.length - 1];
                 if (m.action === 'UPDATE_NODE' && m.targetId && m.targetField) {
                     nextNodes = nextNodes.map((n: any) => {
                         if (n.id === m.targetId) {
@@ -873,9 +867,75 @@ export function ExperimentModal({
                     if (val) {
                         nextEdges = nextEdges.filter((e: any) => e.id !== m.targetId);
                     }
+                } else if (m.action === 'ADD_NODE') {
+                    if (val && typeof val === 'object' && val.technologyId && val.label) {
+                        // Dynamically create a node
+                        const newNodeId = m.targetId || `added-node-${mIdx}`;
+                        
+                        // Try to position it reasonably (default or relative to connectedTo if passed)
+                        let x = 500, y = 500;
+                        
+                        nextNodes.push({
+                            id: newNodeId,
+                            type: 'architecture',
+                            position: { x, y },
+                            data: {
+                                label: val.label,
+                                technologyId: val.technologyId,
+                                color: '#161616',
+                                processingDelay: 0,
+                                errorRate: 0,
+                                latency: {},
+                                routingStrategy: 'broadcast',
+                                logicSteps: val.logicSteps || [],
+                                hardware: val.hardware || undefined,
+                                cacheHitRate: val.cacheHitRate || 0
+                            }
+                        });
+                        
+                        // Auto-connect if connectedTo was provided
+                        if (val.connectedTo) {
+                            nextEdges.push({
+                                id: m.targetId ? `edge-${m.targetId}` : `added-edge-${mIdx}`,
+                                source: val.connectedTo,
+                                target: newNodeId,
+                                sourceHandle: 'right',
+                                targetHandle: 'left',
+                                type: 'event',
+                                data: { protocol: 'HTTP', rps: 1 }
+                            });
+                        }
+                    }
+                } else if (m.action === 'ADD_EDGE') {
+                    if (val && typeof val === 'object' && val.source && val.target) {
+                        nextEdges.push({
+                            id: m.targetId || `added-edge-${mIdx}`,
+                            source: val.source,
+                            target: val.target,
+                            sourceHandle: 'right',
+                            targetHandle: 'left',
+                            type: 'event',
+                            data: { protocol: val.protocol || 'HTTP', rps: 1 }
+                        });
+                    }
+                } else if (m.action === 'UPDATE_TRAFFIC') {
+                    if (val && typeof val === 'object' && val.rps) {
+                        setRequestsPerSecond(val.rps);
+                    }
+                    if (val && typeof val === 'object' && val.payloadKb) {
+                        setGlobalPayloadSize(val.payloadKb);
+                    }
                 }
             });
         }
+
+        if (layoutNeeded) {
+            const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nextNodes, nextEdges);
+            nextNodes = layoutedNodes;
+            nextEdges = layoutedEdges;
+            if (onFitView) onFitView();
+        }
+
         setNodes(nextNodes);
         setEdges(nextEdges);
 
@@ -942,15 +1002,14 @@ export function ExperimentModal({
                     });
 
                     setResults(prev => [...prev, {
-
                         stepIndex: currentStep,
-
-                        value: JSON.stringify(plan.mutations.map(m => m.values[currentStep])),
-
+                        value: plan.mutations ? plan.mutations.map(m => {
+                            const v = m.values[currentStep] ?? m.values[m.values.length - 1];
+                            if (typeof v === 'object') return m.action === 'ADD_NODE' ? `Add ${v.label}` : 'Structural Change';
+                            return v;
+                        }).join(', ') : 'Step',
                         avgLatency: m.avgLatency || 0,
-
                         throughput: m.throughputPerSecond || 0,
-
                         errors: m.totalErrors || 0,
 
                         queueStates: queueSizes,
@@ -1010,17 +1069,11 @@ export function ExperimentModal({
         >
 
             <div 
-
                 onClick={(e) => e.stopPropagation()}
-
                 className={`pointer-events-auto flex flex-col bg-[#fffdf5] border-[4px] border-[#161616] shadow-[8px_8px_0_#161616] transition-all duration-500 overflow-hidden ${
-
                 isMinimized 
-
-                    ? 'w-80 h-auto'
-
+                    ? 'w-96 h-auto'
                     : 'w-full max-w-5xl h-full max-h-[85vh]'
-
             }`}>
 
                 {/* Header */}
@@ -1072,8 +1125,7 @@ export function ExperimentModal({
 
                             <button
 
-                                onClick={onClose}
-
+                                onClick={() => { handleCancel(); onClose(); }}
                                 className="grid h-10 w-10 place-items-center border-[3px] border-[#161616] bg-white transition-colors hover:bg-[#ff6b6b] hover:text-white"
 
                             >
@@ -1120,11 +1172,11 @@ export function ExperimentModal({
 
                         <div className="flex flex-col gap-1">
 
-                            <div className="text-xs font-bold text-[#161616] max-h-24 overflow-y-auto">
+                            <div className="text-xs font-bold text-[#161616] max-h-24 overflow-y-auto break-words whitespace-pre-wrap pr-2">
                                 {plan?.mutations && plan.mutations.map((m, mIdx) => (
-                                    <div key={mIdx}>
+                                    <div key={mIdx} className="mb-2">
                                         <span className="text-neutral-500">[{m.action}] {m.targetId} {m.targetField}</span>
-                                        <span className="text-[#ff4fa3] ml-2">Value: {JSON.stringify(m.values[currentStep])}</span>
+                                        <span className="text-[#ff4fa3] ml-2 break-all">Value: {JSON.stringify(m.values[currentStep])}</span>
                                     </div>
                                 ))}
                             </div>
@@ -1236,6 +1288,7 @@ export function ExperimentModal({
                                                 setCurrentStep(0);
                                                 
                                                 originalNodes.current = JSON.parse(JSON.stringify(nodes));
+                                                hasSnapshotted.current = true;
                                                 originalEdges.current = JSON.parse(JSON.stringify(edges));
                                                 originalLimits.current = { maxInFlight, totalLimit, playbackSpeed, requestsPerSecond };
                                                 
@@ -1311,16 +1364,10 @@ export function ExperimentModal({
 
                                                                 stroke="#161616" 
 
-                                                                tick={{ fontWeight: 900, fontSize: 11, angle: -20, textAnchor: 'end', dy: 15 }}
-
+                                                                tick={{ fontWeight: 900, fontSize: 11 }}
                                                                 tickFormatter={(val) => {
-
                                                                     const numVal = Number(val);
-
-                                                                    const r = item.results.find((x: any) => x.stepIndex === numVal);
-
-                                                                    return r ? `Step ${numVal} (${r.value})` : val;
-
+                                                                    return `Step ${numVal + 1}`;
                                                                 }}
 
                                                             />
@@ -1375,16 +1422,10 @@ export function ExperimentModal({
 
                                                                 stroke="#161616" 
 
-                                                                tick={{ fontWeight: 900, fontSize: 11, angle: -20, textAnchor: 'end', dy: 15 }}
-
+                                                                tick={{ fontWeight: 900, fontSize: 11 }}
                                                                 tickFormatter={(val) => {
-
                                                                     const numVal = Number(val);
-
-                                                                    const r = item.results.find((x: any) => x.stepIndex === numVal);
-
-                                                                    return r ? `Step ${numVal} (${r.value})` : val;
-
+                                                                    return `Step ${numVal + 1}`;
                                                                 }}
 
                                                             />

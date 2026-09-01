@@ -44,16 +44,21 @@ ${edgeSummary}
 Valid Target Fields you can mutate in UPDATE_NODE:
 - "latency.base" (number, base latency in ms, 5 to 500)
 - "processingDelay" (number, processing delay in ms, 0 to 500)
-- "errorRate" (number, packet drop/error rate 0.0 to 1.0. 1.0 = total outage)
+- "errorRate" (number, packet drop/error rate 0.0 to 1.0)
+- "hardware.memoryMb" (number, e.g. 1024 to 128 to cause an Out-Of-Memory crash)
+- "hardware.cpuCores" (number, 1 to 64. Low cores causes queue bottlenecks)
+- "bandwidthCapacity" (number, bandwidth Kbps. Low bandwidth causes payload delays)
 
 CRITICAL RULES:
-1. Structural Mutations: You can perform multiple actions simultaneously. E.g. to crash a whole database tier, you can DELETE_NODE multiple databases, or UPDATE_NODE their errorRate to 1.0. You can delete wires (DELETE_EDGE) to simulate network partitions.
-2. Dynamic Steps: Every plan has a \`stepCount\` (e.g. 3). Every mutation you provide MUST provide an array of \`values\` exactly matching the \`stepCount\` length.
-   - For UPDATE_NODE: e.g. values: [0.0, 0.5, 1.0] (for 3 steps).
-   - For DELETE_NODE / DELETE_EDGE: e.g. values: [false, true, true] (false = normal, true = deleted).
-3. Learn from History: Do NOT repeat an experiment that is already in the history.
-4. Analysis: For EVERY response, provide an 'analysis' string. If proposing, write a short analysis of the latest results. If concluding, write a massive detailed Markdown report.
+1. Structural & Hardware Mutations: You have total control. You can crash a node via OOM by mutating "hardware.memoryMb" to 128. You can cause network congestion by mutating "bandwidthCapacity". You can DELETE_NODE or DELETE_EDGE. You can rewrite routing by targeting "routingStrategy".
+2. Dynamic Traffic & Payloads: You can use the 'UPDATE_TRAFFIC' action to launch DDoS attacks or large file uploads. For UPDATE_TRAFFIC, the values array must contain objects like: {"rps": 5000, "payloadKb": 500}.
+3. Spawning Nodes: You can use 'ADD_NODE' to create infrastructure. For ADD_NODE, the values array must contain objects like: {"label": "Fallback DB", "technologyId": "redis", "connectedTo": "node-123", "hardware": {"memoryMb": 2048, "cpuCores": 4}, "logicSteps": [{"id": "ls1", "type": "db_query", "name": "Select", "targetNodeId": null}]}.
+4. Spawning Edges: You can use 'ADD_EDGE' to wire nodes. Emit multiple ADD_EDGE mutations if you want bidirectional wiring (e.g. A to B, B to C). For ADD_EDGE, values: {"source": "node-A", "target": "node-B", "protocol": "HTTP"}.
+5. Dynamic Steps: Every plan has a \`stepCount\` (e.g. 3). Every mutation MUST provide an array of \`values\` exactly matching the \`stepCount\` length. (e.g. [1024, 512, 128] for memory draining).
+6. Learn from History: Do NOT repeat an experiment that is already in the history.
+7. Analysis: For EVERY response, provide an 'analysis' string.
 `,
+
             prompt: `USER PROMPT: ${prompt}${historyPrompt}`,
             schema: z.object({
                 decision: z.enum(['PROPOSE_EXPERIMENTS', 'CONCLUDE']),
@@ -63,7 +68,7 @@ CRITICAL RULES:
                     hypothesis: z.string(),
                     stepCount: z.number().describe("The total number of time steps for this experiment, e.g. 3 or 4"),
                     mutations: z.array(z.object({
-                        action: z.enum(['UPDATE_NODE', 'DELETE_NODE', 'DELETE_EDGE']),
+                        action: z.enum(['UPDATE_NODE', 'DELETE_NODE', 'DELETE_EDGE', 'ADD_NODE', 'ADD_EDGE', 'UPDATE_TRAFFIC']),
                         targetId: z.string().describe("The ID of the Node or Edge"),
                         targetField: z.string().optional().describe("For UPDATE_NODE, e.g. 'errorRate', 'processingDelay', 'latency.base'"),
                         values: z.array(z.any()).describe("An array of values mapping to each step. Length MUST exactly equal stepCount.")

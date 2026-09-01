@@ -78,7 +78,7 @@ import { BoundaryNode, type BoundaryFlowNode } from './boundary-node';
 type AppNode = ArchitectureFlowNode | BoundaryFlowNode;
 
 import { useSimulation } from '../../hooks/use-simulation';
-import { isValidConnection } from '../../hooks/validate-architecture';
+import { isValidConnection, validateArchitecture } from '../../hooks/validate-architecture';
 import { EdgePropertiesPanel } from './edge-properties';
 import {
     EventEdge,
@@ -308,6 +308,7 @@ export function ArchitectureCanvas() {
     const [isSingleCycle, setIsSingleCycle] = useState(false);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [requestsPerSecond, setRequestsPerSecond] = useState(0.83);
+    const [globalPayloadSize, setGlobalPayloadSize] = useState(30);
     
     // Playback Limits
     const [maxInFlight, setMaxInFlight] = useState(100);
@@ -359,6 +360,21 @@ export function ArchitectureCanvas() {
     // Dynamic Technology State
     const [technologies, setTechnologies] =
         useState<TechnologyDefinition[]>(technologyLibrary);
+
+    const [structuralWarnings, setStructuralWarnings] = useState<SystemWarning[]>([]);
+
+    useEffect(() => {
+        const warnings = validateArchitecture(nodes as ArchitectureFlowNode[], edges as EventFlowEdge[], technologies);
+        setStructuralWarnings(warnings.map(w => ({
+            id: w.id,
+            type: 'unprogrammed',
+            message: w.message,
+            nodeId: w.nodeId,
+            timestamp: new Date()
+        })));
+    }, [nodes, edges, technologies]);
+
+    const activeWarnings = [...structuralWarnings, ...systemWarnings];
 
     // Reset chaosTargetId if the selected node is deleted
     useEffect(() => {
@@ -445,6 +461,7 @@ export function ArchitectureCanvas() {
         isSingleCycle,
         playbackSpeed,
         requestsPerSecond,
+        globalPayloadSize,
         maxInFlight,
         totalLimit,
         handleWarning,
@@ -564,15 +581,7 @@ export function ArchitectureCanvas() {
     }, [bottleneckNodes, setNodes]);
 
     const onUpdateNode = useCallback(
-        (
-            nodeId: string,
-            logicSteps: LogicStep[],
-            processingDelay?: number,
-            latency?: NodeLatencyConfig,
-            routingStrategy?: 'broadcast' | 'load-balance',
-            disabled?: boolean,
-            errorRate?: number
-        ) => {
+        (nodeId: string, dataUpdates: any) => {
             setNodes((nds) =>
                 nds.map((n) => {
                     if (n.id === nodeId && n.type === 'architecture') {
@@ -581,15 +590,7 @@ export function ArchitectureCanvas() {
                             ...archNode,
                             data: {
                                 ...archNode.data,
-                                logicSteps,
-                                processingDelay:
-                                    processingDelay !== undefined
-                                        ? processingDelay
-                                        : archNode.data.processingDelay,
-                                latency: latency ?? archNode.data.latency,
-                                routingStrategy: routingStrategy ?? archNode.data.routingStrategy,
-                                disabled: disabled !== undefined ? disabled : archNode.data.disabled,
-                                errorRate: errorRate !== undefined ? errorRate : archNode.data.errorRate,
+                                ...dataUpdates,
                             },
                         } as ArchitectureFlowNode;
                     }
@@ -2140,6 +2141,33 @@ export function ArchitectureCanvas() {
                                         </div>
 
                                         <div>
+                                            <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#ffde59] px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
+                                                🚀 AI Chaos &amp; Experiment Engine
+                                            </h3>
+                                            <p className="mb-3 text-sm text-[#161616] font-medium">The AI Architect reads your architecture, generates hypotheses, and destructively tests them in an infinite experimental loop.</p>
+                                            <ul className="list-disc space-y-2 pl-4 text-sm font-bold">
+                                                <li><b>Chaos Prompts:</b> Click &quot;AI Tools&quot; then &quot;Open Sweeper&quot; and describe what to test. The AI will propose 3 experiments to choose from.</li>
+                                                <li><b>Structural Spawning (Auto-Scaling):</b> The AI can automatically <b>spawn new nodes and edges</b> (ADD_NODE/ADD_EDGE) to build fallback systems mid-experiment.</li>
+                                                <li><b>Dynamic Traffic (DDoS):</b> The AI can generate massive traffic spikes by modifying <b>RPS (Requests per Second)</b> and spiking the <b>Payload Size</b> (e.g., simulating 50MB video uploads) mid-simulation.</li>
+                                                <li><b>Safe Snapshots:</b> Before any experiment runs, the canvas takes a full snapshot. When you press &quot;Cancel&quot; or the experiment ends, your original graph is perfectly restored to baseline.</li>
+                                                <li><b>PDF Reports:</b> After the AI concludes, a full interactive report with charts, analysis, and grades is generated and downloadable as a PDF.</li>
+                                            </ul>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="mb-2 inline-block border-[2px] border-[#161616] bg-[#5de2e7] px-2 py-1 font-black uppercase shadow-[2px_2px_0_#161616]">
+                                                ⚡ Hardware Limits &amp; OOM Physics
+                                            </h3>
+                                            <p className="mb-3 text-sm text-[#161616] font-medium">Double-click any node to configure its hardware limits. The simulation engine strictly enforces these real-world computing constraints.</p>
+                                            <ul className="list-disc space-y-2 pl-4 text-sm font-bold">
+                                                <li><span className="text-green-600">Memory (MB) &amp; OOM Crashes:</span> Each active packet consumes <b>0.5 MB per 1 KB of payload</b>. If active memory exceeds the node&apos;s Memory slider limit, the node suffers a <b>Hard OOM (Out-of-Memory) Crash</b>. It goes offline (502 Bad Gateway) and drops all incoming packets until traffic subsides and memory is freed.</li>
+                                                <li><span className="text-green-600">CPU Cores &amp; Queuing:</span> CPU Cores determine <b>Concurrency</b>. Formula: <code>CPU Cores × 4 = Max simultaneous packets</code>. Excess packets queue up, causing latency to skyrocket. If the queue overflows, you get <b>503 (Service Unavailable)</b> errors.</li>
+                                                <li><span className="text-green-600">Bandwidth (Kbps):</span> Limits network ingestion speed. Latency penalty formula: <code>(Payload KB / Bandwidth Kbps) × 1000 ms</code>. Lower bandwidth = much slower packet processing.</li>
+                                                <li><span className="text-green-600">Error Rate:</span> A percentage slider (0-100%) that randomly drops packets. At 100%, the node destroys every incoming request.</li>
+                                            </ul>
+                                        </div>
+
+                                        <div>
                                             <h3 className="font-black uppercase bg-[#ff4fa3] text-white border-[2px] border-[#161616] px-2 py-1 inline-block mb-2 shadow-[2px_2px_0_#161616]">
                                                 Running Simulations
                                             </h3>
@@ -2760,6 +2788,7 @@ export function ArchitectureCanvas() {
                     setPlaybackSpeed={setPlaybackSpeed}
                     requestsPerSecond={requestsPerSecond}
                     setRequestsPerSecond={setRequestsPerSecond}
+                    setGlobalPayloadSize={setGlobalPayloadSize}
                     nodeQueues={nodeQueues}
                     edgePulses={edgePulses}
                     bottleneckNodes={bottleneckNodes}
@@ -2924,14 +2953,14 @@ export function ArchitectureCanvas() {
                 <div className="absolute bottom-6 right-6 z-50 flex items-end justify-end">
                     <div className="relative group">
                         <button
-                            className={`neo-button w-14 h-14 rounded-full flex items-center justify-center border-[3px] border-[#161616] shadow-[4px_4px_0_#161616] transition-transform hover:-translate-y-1 ${systemWarnings.length > 0 ? 'bg-[#ffde59] animate-pulse' : 'bg-white'}`}
+                            className={`neo-button w-14 h-14 rounded-full flex items-center justify-center border-[3px] border-[#161616] shadow-[4px_4px_0_#161616] transition-transform hover:-translate-y-1 ${activeWarnings.length > 0 ? 'bg-[#ffde59] animate-pulse' : 'bg-white'}`}
                             onClick={() => setIsWarningsPanelOpen(!isWarningsPanelOpen)}
                             title="System Diagnostics"
                         >
-                            <AlertTriangle className={`w-7 h-7 ${systemWarnings.length > 0 ? 'text-[#ff6b6b]' : 'text-[#161616]'}`} />
-                            {systemWarnings.length > 0 && (
+                            <AlertTriangle className={`w-7 h-7 ${activeWarnings.length > 0 ? 'text-[#ff6b6b]' : 'text-[#161616]'}`} />
+                            {activeWarnings.length > 0 && (
                                 <span className="absolute -top-2 -right-2 bg-[#ff4fa3] text-white text-xs font-black px-2 py-0.5 rounded-full border-[2px] border-[#161616]">
-                                    {systemWarnings.length}
+                                    {activeWarnings.length}
                                 </span>
                             )}
                         </button>
@@ -2957,12 +2986,12 @@ export function ArchitectureCanvas() {
                         </div>
                         
                         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-                            {systemWarnings.length === 0 ? (
+                            {activeWarnings.length === 0 ? (
                                 <div className="text-center p-4 text-gray-500 font-bold text-sm">
                                     No warnings right now! System is running smoothly.
                                 </div>
                             ) : (
-                                systemWarnings.map((warning) => (
+                                activeWarnings.map((warning) => (
                                     <div key={warning.id} className="border-[2px] border-[#161616] p-2 bg-white relative">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-[10px] font-black uppercase bg-[#ff6b6b] text-white px-1 py-0.5 inline-block">
@@ -3006,7 +3035,7 @@ export function ArchitectureCanvas() {
                             )}
                         </div>
                         
-                        {systemWarnings.length > 0 && (
+                        {activeWarnings.length > 0 && (
                             <div className="p-3 border-t-[3px] border-[#161616] bg-gray-50 flex justify-end">
                                 <button
                                     onClick={() => {

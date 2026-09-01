@@ -114,6 +114,7 @@ export function useSimulation(
     singleCycle: boolean = false,
     playbackSpeed: number = 1,
     requestsPerSecond: number = 0.83,
+    globalPayloadSize: number = 30,
     maxInFlight: number = Infinity,
     totalLimit: number = Infinity,
     onWarning?: (warning: SystemWarning) => void,
@@ -219,6 +220,7 @@ export function useSimulation(
     const maxInFlightRef = useRef(maxInFlight);
     const totalLimitRef = useRef(totalLimit);
     const requestsPerSecondRef = useRef(requestsPerSecond);
+    const globalPayloadSizeRef = useRef(globalPayloadSize);
     const warnedNodesRef = useRef<Set<string>>(new Set());
     const inFlightLb = useRef<Record<string, string[]>>({});
     const metricsRef = useRef(metrics);
@@ -232,8 +234,9 @@ export function useSimulation(
         maxInFlightRef.current = maxInFlight;
         totalLimitRef.current = totalLimit;
         requestsPerSecondRef.current = requestsPerSecond;
+        globalPayloadSizeRef.current = globalPayloadSize;
         metricsRef.current = metrics;
-    }, [nodes, edges, technologies, isPlaying, isPaused, metrics, maxInFlight, totalLimit, requestsPerSecond]);
+    }, [nodes, edges, technologies, isPlaying, isPaused, metrics, maxInFlight, totalLimit, requestsPerSecond, globalPayloadSize]);
 
     useEffect(() => {
         if (isPlaying && onWarning && !warnedNodesRef.current.has('wiring-checked')) {
@@ -423,12 +426,10 @@ export function useSimulation(
         const q = nodeQueuesRef.current[nodeId];
         if (!q || q.length === 0) return;
         
-        let concurrencyLimit = 10;
+        let node = nodesRef.current.find((n) => n.id === nodeId);
+        let concurrencyLimit = node?.data?.hardware?.cpuCores ? node.data.hardware.cpuCores * 4 : 10;
         if (tech.category === 'client') concurrencyLimit = Infinity;
-        else if (tech.category === 'data') concurrencyLimit = 10;
-        else if (tech.category === 'cache') concurrencyLimit = 50;
-        else if (tech.category === 'messaging') concurrencyLimit = 500;
-        else if (tech.category === 'storage') concurrencyLimit = 20;
+        
 
         const processing = nodeProcessingCount.current[nodeId] || 0;
         if (processing >= concurrencyLimit) return;
@@ -534,13 +535,34 @@ export function useSimulation(
 
             const modeledLatency = estimateNodeLatency(node, tech, pulse.type);
             
+            // Physical limitations
+            const bandwidth = node.data.bandwidthCapacity || 1000;
+            const payloadKb = globalPayloadSizeRef.current;
+            const bandwidthDelayMs = (payloadKb / bandwidth) * 1000; // ms to process
+            
+            // OOM Crash logic
+            const memoryMb = node.data.hardware?.memoryMb || 1024;
+            const processingCount = nodeProcessingCount.current[node.id] || 0;
+            const estimatedMemoryUsed = processingCount * (payloadKb * 0.5); // 0.5mb per 1kb payload
+            const isOOM = estimatedMemoryUsed >= memoryMb;
+            
+            if (isOOM) {
+                // Hard crash OOM!
+                offlineNodesRef.current.add(node.id);
+            } else {
+                // Recover from OOM if memory freed up
+                if (offlineNodesRef.current.has(node.id)) {
+                    offlineNodesRef.current.delete(node.id);
+                }
+            }
+
             const baseDelay = Math.max(
                 35,
                 Math.round(modeledLatency * 0.25) +
-                    Math.round((node.data.processingDelay || 0) * 0.2),
+                    Math.round((node.data.processingDelay || 0) * 0.2) + bandwidthDelayMs,
             );
-            
-            const delay = Math.min(1400, baseDelay);
+
+            const delay = Math.min(5000, baseDelay);
 
             const executeLogic = () => {
                 if (!isPlayingRef.current) return;

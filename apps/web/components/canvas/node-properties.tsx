@@ -17,12 +17,7 @@ interface NodePropertiesProps {
     technologies: TechnologyDefinition[];
     onUpdateNode: (
         nodeId: string,
-        logicSteps: LogicStep[],
-        processingDelay?: number,
-        latency?: NodeLatencyConfig,
-        routingStrategy?: 'broadcast' | 'load-balance',
-        disabled?: boolean,
-        errorRate?: number
+        dataUpdates: any
     ) => void;
     onClose: () => void;
     onDeleteNode?: (nodeId: string) => void;
@@ -51,6 +46,9 @@ export function NodePropertiesPanel({
     const [draftStrategy, setDraftStrategy] = useState<'broadcast' | 'load-balance'>('broadcast');
     const [draftDisabled, setDraftDisabled] = useState<boolean>(false);
     const [draftErrorRate, setDraftErrorRate] = useState<number>(0);
+    const [draftCpu, setDraftCpu] = useState<number>(4);
+    const [draftMemory, setDraftMemory] = useState<number>(1024);
+    const [draftBandwidth, setDraftBandwidth] = useState<number>(1000);
 
     useEffect(() => {
         if (node) {
@@ -60,6 +58,9 @@ export function NodePropertiesPanel({
             setDraftStrategy(node.data.routingStrategy || 'broadcast');
             setDraftDisabled(node.data.disabled || false);
             setDraftErrorRate(node.data.errorRate || 0);
+            setDraftCpu(node.data.hardware?.cpuCores || 4);
+            setDraftMemory(node.data.hardware?.memoryMb || 1024);
+            setDraftBandwidth(node.data.bandwidthCapacity || 1000);
         }
     }, [nodeId, node?.data]);
 
@@ -158,7 +159,7 @@ export function NodePropertiesPanel({
             <label className="flex flex-col gap-1">
                 Action
                 <select
-                    className="neo-input p-1"
+                    className="p-1 border-[2px] border-[#161616] bg-white focus:bg-[#d8fbfe] focus:outline-none transition-colors w-full font-bold"
                     value={action}
                     onChange={(e) => setAction(e.target.value as any)}
                 >
@@ -172,7 +173,7 @@ export function NodePropertiesPanel({
                 <label className="flex flex-col gap-1">
                     Target Node
                     <select
-                        className="neo-input p-1"
+                        className="p-1 border-[2px] border-[#161616] bg-white focus:bg-[#d8fbfe] focus:outline-none transition-colors w-full font-bold"
                         value={targetId}
                         onChange={(e) => setTargetId(e.target.value)}
                     >
@@ -200,7 +201,7 @@ export function NodePropertiesPanel({
                         type="number"
                         min="0"
                         max="100"
-                        className="neo-input p-1"
+                        className="p-1 border-[2px] border-[#161616] bg-white focus:bg-[#d8fbfe] focus:outline-none transition-colors w-full font-bold"
                         value={hitRate}
                         onChange={(e) => setHitRate(Number(e.target.value))}
                     />
@@ -210,7 +211,7 @@ export function NodePropertiesPanel({
             <label className="flex flex-col gap-1">
                 Condition
                 <select
-                    className="neo-input p-1"
+                    className="p-1 border-[2px] border-[#161616] bg-white focus:bg-[#d8fbfe] focus:outline-none transition-colors w-full font-bold"
                     value={condition}
                     onChange={(e) => setCondition(e.target.value as any)}
                 >
@@ -285,16 +286,24 @@ export function NodePropertiesPanel({
                                 type="range"
                                 min="0"
                                 max="5000"
-                                step="100"
+                                step="10"
                                 value={draftDelay}
                                 onChange={(e) =>
-                                    setDraftDelay(parseInt(e.target.value))
+                                    setDraftDelay(parseInt(e.target.value) || 0)
                                 }
                                 className="w-full accent-[#ff4fa3]"
                             />
-                            <span className="w-16 text-right whitespace-nowrap text-[#ff4fa3]">
-                                {draftDelay}ms
-                            </span>
+                            <div className="flex items-center gap-1">
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="5000"
+                                    value={draftDelay}
+                                    onChange={(e) => setDraftDelay(parseInt(e.target.value) || 0)}
+                                    className="w-16 text-right font-mono font-black text-sm bg-white border-[2px] border-[#161616] px-1 py-0.5 text-[#ff4fa3] focus:bg-[#d8fbfe] transition-colors focus:outline-none"
+                                />
+                                <span className="text-xs font-black text-[#ff4fa3]">ms</span>
+                            </div>
                         </div>
                         <span className="text-[10px] font-bold text-[#161616]/70 leading-tight mt-1 normal-case">
                             Make this node slower to observe latency
@@ -314,12 +323,20 @@ export function NodePropertiesPanel({
                                 max="1"
                                 step="0.01"
                                 value={draftErrorRate}
-                                onChange={(e) => setDraftErrorRate(parseFloat(e.target.value))}
+                                onChange={(e) => setDraftErrorRate(parseFloat(e.target.value) || 0)}
                                 className="w-full accent-[#ff6b6b]"
                             />
-                            <span className="w-16 text-right whitespace-nowrap text-[#ff6b6b]">
-                                {Math.round(draftErrorRate * 100)}%
-                            </span>
+                            <div className="flex items-center gap-1">
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={Math.round(draftErrorRate * 100)}
+                                    onChange={(e) => setDraftErrorRate((parseFloat(e.target.value) || 0) / 100)}
+                                    className="w-16 text-right font-mono font-black text-sm bg-white border-[2px] border-[#161616] px-1 py-0.5 text-[#ff6b6b] focus:bg-[#d8fbfe] transition-colors focus:outline-none"
+                                />
+                                <span className="text-xs font-black text-[#ff6b6b]">%</span>
+                            </div>
                         </div>
                         <span className="text-[10px] font-bold text-[#161616]/70 leading-tight mt-1 normal-case">
                             Simulate packet loss or a node crash. At 100%, all incoming packets are instantly destroyed.
@@ -331,7 +348,7 @@ export function NodePropertiesPanel({
                     <label className="flex flex-col gap-1 text-sm font-black uppercase">
                         Routing Strategy
                         <select
-                            className="neo-input p-1 mt-2 font-bold"
+                            className="p-1 border-[2px] border-[#161616] bg-white focus:bg-[#d8fbfe] focus:outline-none transition-colors w-full mt-2 font-bold"
                             value={draftStrategy}
                             onChange={(e) => {
                                 const newStrategy = e.target.value as 'broadcast' | 'load-balance';
@@ -361,7 +378,7 @@ export function NodePropertiesPanel({
                         <label className="flex flex-col gap-1">
                             Workload
                             <select
-                                className="neo-input p-1"
+                                className="p-1 border-[2px] border-[#161616] bg-white focus:bg-[#d8fbfe] focus:outline-none transition-colors w-full font-bold"
                                 value={latency.workload || 'normal'}
                                 onChange={(event) =>
                                     updateLatency(
@@ -377,7 +394,25 @@ export function NodePropertiesPanel({
                         </label>
                         { (technologies.find(t => t.id === node.data.technologyId)?.category === 'cache' || steps.some(s => s.action === 'simulate-cache')) && (
                             <label className="flex flex-col gap-1">
-                                Cache hit rate (%): {latency.cacheHitRate ?? 80}
+                                <div className="flex items-center justify-between">
+                                    <span>Cache hit rate</span>
+                                    <div className="flex items-center gap-1">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={latency.cacheHitRate ?? 80}
+                                            onChange={(event) =>
+                                                updateLatency(
+                                                    'cacheHitRate',
+                                                    Number(event.target.value) || 0,
+                                                )
+                                            }
+                                            className="w-16 text-right font-mono font-black text-sm bg-white border-[2px] border-[#161616] px-1 py-0.5 text-[#9cf57a] focus:bg-[#d8fbfe] transition-colors focus:outline-none"
+                                        />
+                                        <span className="text-xs font-black text-[#9cf57a]">%</span>
+                                    </div>
+                                </div>
                                 <input
                                     type="range"
                                     min="0"
@@ -390,7 +425,7 @@ export function NodePropertiesPanel({
                                             Number(event.target.value),
                                         )
                                     }
-                                    className="accent-[#9cf57a]"
+                                    className="w-full accent-[#9cf57a]"
                                 />
                             </label>
                         )}
@@ -400,7 +435,7 @@ export function NodePropertiesPanel({
                                 type="number"
                                 min="1"
                                 max="1000"
-                                className="neo-input p-1"
+                                className="p-1 border-[2px] border-[#161616] bg-white focus:bg-[#d8fbfe] focus:outline-none transition-colors w-full font-bold"
                                 value={latency.concurrency ?? 1}
                                 onChange={(event) =>
                                     updateLatency(
@@ -416,7 +451,7 @@ export function NodePropertiesPanel({
                                 type="number"
                                 min="0"
                                 max="20"
-                                className="neo-input p-1"
+                                className="p-1 border-[2px] border-[#161616] bg-white focus:bg-[#d8fbfe] focus:outline-none transition-colors w-full font-bold"
                                 value={latency.networkHops ?? 1}
                                 onChange={(event) =>
                                     updateLatency(
@@ -427,8 +462,26 @@ export function NodePropertiesPanel({
                             />
                         </label>
                         <label className="flex flex-col gap-1">
-                            Latency multiplier: {latency.latencyMultiplier ?? 1}
-                            x
+                            <div className="flex items-center justify-between">
+                                <span>Latency multiplier</span>
+                                <div className="flex items-center gap-1">
+                                    <input
+                                        type="number"
+                                        min="0.25"
+                                        max="5"
+                                        step="0.25"
+                                        value={latency.latencyMultiplier ?? 1}
+                                        onChange={(event) =>
+                                            updateLatency(
+                                                'latencyMultiplier',
+                                                Number(event.target.value) || 1,
+                                            )
+                                        }
+                                        className="w-16 text-right font-mono font-black text-sm bg-white border-[2px] border-[#161616] px-1 py-0.5 text-[#ff4fa3] focus:bg-[#d8fbfe] transition-colors focus:outline-none"
+                                    />
+                                    <span className="text-xs font-black text-[#ff4fa3]">x</span>
+                                </div>
+                            </div>
                             <input
                                 type="range"
                                 min="0.25"
@@ -441,7 +494,7 @@ export function NodePropertiesPanel({
                                         Number(event.target.value),
                                     )
                                 }
-                                className="accent-[#ff4fa3]"
+                                className="w-full accent-[#ff4fa3]"
                             />
                         </label>
                         <label className="flex flex-col gap-1">
@@ -450,7 +503,7 @@ export function NodePropertiesPanel({
                                 type="number"
                                 min="0"
                                 max="5000"
-                                className="neo-input p-1"
+                                className="p-1 border-[2px] border-[#161616] bg-white focus:bg-[#d8fbfe] focus:outline-none transition-colors w-full font-bold"
                                 value={latency.nodeOverrideMs ?? 0}
                                 onChange={(event) =>
                                     updateLatency(
@@ -549,12 +602,89 @@ export function NodePropertiesPanel({
                     </div>
 
                 )}
+
+                {/* Hardware Limits */}
+                <div className="mt-4 border-[3px] border-[#161616] p-3 shadow-[4px_4px_0_#161616] bg-[#ffde59]/30">
+                    <h4 className="font-black text-sm uppercase mb-3 text-[#161616] flex items-center justify-between border-b-[3px] border-[#161616] pb-1">
+                        Hardware Limits
+                        <span className="bg-[#ff4fa3] text-white px-2 py-0.5 text-[10px] font-black border-[2px] border-[#161616]">OOM RISK</span>
+                    </h4>
+                    <div className="space-y-3">
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="text-[10px] font-black uppercase text-[#161616]/70">Memory (MB)</label>
+                                <input 
+                                    type="number"
+                                    min="128" max="16384"
+                                    value={draftMemory}
+                                    onChange={(e) => setDraftMemory(parseInt(e.target.value) || 0)}
+                                    className="font-mono font-black text-xs bg-white border-[2px] border-[#161616] px-1.5 py-0.5 w-20 text-right focus:bg-[#d8fbfe] transition-colors focus:outline-none"
+                                />
+                            </div>
+                            <input 
+                                type="range" min="128" max="16384" step="128"
+                                value={draftMemory}
+                                onChange={(e) => setDraftMemory(parseInt(e.target.value) || 0)}
+                                className="w-full accent-[#161616] h-2"
+                            />
+                        </div>
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="text-[10px] font-black uppercase text-[#161616]/70">CPU Cores</label>
+                                <input 
+                                    type="number"
+                                    min="1" max="64"
+                                    value={draftCpu}
+                                    onChange={(e) => setDraftCpu(parseInt(e.target.value) || 0)}
+                                    className="font-mono font-black text-xs bg-white border-[2px] border-[#161616] px-1.5 py-0.5 w-16 text-right focus:bg-[#d8fbfe] transition-colors focus:outline-none"
+                                />
+                            </div>
+                            <input 
+                                type="range" min="1" max="64" step="1"
+                                value={draftCpu}
+                                onChange={(e) => setDraftCpu(parseInt(e.target.value) || 0)}
+                                className="w-full accent-[#161616] h-2"
+                            />
+                        </div>
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="text-[10px] font-black uppercase text-[#161616]/70">Bandwidth (Kbps)</label>
+                                <input 
+                                    type="number"
+                                    min="100" max="100000"
+                                    value={draftBandwidth}
+                                    onChange={(e) => setDraftBandwidth(parseInt(e.target.value) || 0)}
+                                    className="font-mono font-black text-xs bg-white border-[2px] border-[#161616] px-1.5 py-0.5 w-24 text-right focus:bg-[#d8fbfe] transition-colors focus:outline-none"
+                                />
+                            </div>
+                            <input 
+                                type="range" min="100" max="100000" step="100"
+                                value={draftBandwidth}
+                                onChange={(e) => setDraftBandwidth(parseInt(e.target.value) || 0)}
+                                className="w-full accent-[#161616] h-2"
+                            />
+                        </div>
+                    </div>
+                    <p className="text-[10px] font-bold text-[#161616]/50 leading-tight mt-2 normal-case">
+                        These limits control OOM crashes, queue overflow, and bandwidth throttling during simulation.
+                    </p>
+                </div>
+
             </div>
 
             <div className="border-t-[3px] border-[#161616] bg-gray-50 px-4 py-3 flex gap-3">
                 <button 
                     onClick={() => {
-                        onUpdateNode(node.id, draftSteps, draftDelay, draftLatency, draftStrategy, draftDisabled, draftErrorRate);
+                        onUpdateNode(node.id, {
+                            logicSteps: draftSteps,
+                            processingDelay: draftDelay,
+                            latency: draftLatency,
+                            routingStrategy: draftStrategy,
+                            disabled: draftDisabled,
+                            errorRate: draftErrorRate,
+                            hardware: { cpuCores: draftCpu, memoryMb: draftMemory },
+                            bandwidthCapacity: draftBandwidth
+                        });
                         onClose();
                     }}
                     className="flex-1 neo-button bg-[#5de2e7] hover:bg-[#4bcad0] py-2 flex items-center justify-center gap-2 text-sm font-black tracking-wide"
