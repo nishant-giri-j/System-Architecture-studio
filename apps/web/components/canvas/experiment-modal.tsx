@@ -693,35 +693,26 @@ export function ExperimentModal({
         
 
         // Clean up
-
         setTimeout(() => URL.revokeObjectURL(url), 5000);
 
     };
 
-    const callChaosAgent = async (currentHistory: any[], forceConclusion: boolean = false) => {
-
+    const callChaosAgent = async (currentHistory: any[], forceConclusion: boolean = false, rejectedTitles: string[] = []) => {
         try {
+            const actualPrompt = rejectedTitles.length > 0 
+                ? `${prompt}\n\nNote: I rejected these previously proposed plans: ${rejectedTitles.join(', ')}. Please suggest completely different and unique experiment plans. Do not propose the same ones again.`
+                : prompt;
 
             const res = await fetch('/api/ai/chaos-agent', {
-
                 method: 'POST',
-
                 headers: { 'Content-Type': 'application/json' },
-
                 body: JSON.stringify({
-
-                    prompt,
-
+                    prompt: actualPrompt,
                     nodes: nodes.map(n => ({ id: n.id, data: n.data })),
-
                     history: currentHistory,
-
                     forceConclusion
-
                 }),
-
                 signal: abortControllerRef.current?.signal
-
             });
 
             const data = await res.json();
@@ -759,25 +750,19 @@ export function ExperimentModal({
     };
 
     const handleStartChaosAgent = async () => {
-
         if (!prompt) return;
-
         if (onFitView) onFitView();
-
         
-
         setError('');
-
         setStatus('agent-thinking');
-
         setHistory([]);
-
+        setConclusion('');
+        setPlan(null);
+        setProposedPlans([]);
+        setResults([]);
                 
-
         abortControllerRef.current = new AbortController();
-
         callChaosAgent([], false);
-
     };
 
     // The Automation Engine
@@ -1429,13 +1414,24 @@ export function ExperimentModal({
                                         </div>
                                     ))}
                                 </div>
-                                <div className="flex justify-end pt-4 border-t-[3px] border-[#161616]">
+                                <div className="flex justify-between pt-4 border-t-[3px] border-[#161616]">
+                                    <button 
+                                        onClick={() => {
+                                            setStatus('agent-thinking');
+                                            const rejectedTitles = proposedPlans.map(p => p.title);
+                                            setProposedPlans([]);
+                                            callChaosAgent(history, false, rejectedTitles);
+                                        }}
+                                        className="neo-button bg-[#ffde59] text-[#161616] hover:bg-[#e6c850] font-black uppercase text-xs px-4 py-2 border-[3px] border-[#161616] shadow-[4px_4px_0_#161616] hover:translate-y-1 hover:shadow-none transition-all flex items-center gap-2"
+                                    >
+                                        Skip / Load Other Options
+                                    </button>
                                     <button 
                                         onClick={() => {
                                             setStatus('agent-thinking');
                                             callChaosAgent(history, true);
                                         }}
-                                        className="neo-button bg-[#ff6b6b] text-white hover:bg-[#e05656] font-black uppercase text-sm px-6 py-2"
+                                        className="neo-button bg-[#ff6b6b] text-white hover:bg-[#e05656] font-black uppercase text-xs px-4 py-2 border-[3px] border-[#161616] shadow-[4px_4px_0_#161616] hover:translate-y-1 hover:shadow-none transition-all"
                                     >
                                         Conclude & Generate Report
                                     </button>

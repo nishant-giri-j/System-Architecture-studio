@@ -1635,8 +1635,26 @@ export function ArchitectureCanvas() {
                                 />
                             )}
                         <ReactFlow<AppNode, EventFlowEdge>
-                            nodes={nodes.map((n) =>
-                                n.type === 'architecture'
+                            nodes={[...nodes]
+                                .map(n => {
+                                    // Fix orphaned children: if parent doesn't exist, remove parentId
+                                    if (n.parentId && !nodes.some(p => p.id === n.parentId)) {
+                                        return { ...n, parentId: undefined };
+                                    }
+                                    return n;
+                                })
+                                .sort((a, b) => {
+                                    // Deep topological sort: count parents
+                                    const getDepth = (nodeId: string | undefined, depth = 0): number => {
+                                        if (!nodeId) return depth;
+                                        if (depth > 10) return depth; // Avoid infinite loops in bad state
+                                        const parent = nodes.find(n => n.id === nodeId);
+                                        return getDepth(parent?.parentId, depth + 1);
+                                    };
+                                    return getDepth(a.parentId) - getDepth(b.parentId);
+                                })
+                                .map((n) =>
+                                    n.type === 'architecture'
                                     ? {
                                           ...n,
                                           data: {

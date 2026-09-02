@@ -35,16 +35,34 @@ export function useAutoResolve(
         abortControllerRef.current = controller;
         try {
             const enrichedWarning = nodeId ? `${warningText}\n\nTARGET NODE ID TO FIX: ${nodeId}` : warningText;
-            const response = await fetch("/api/ai/auto-resolve", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ nodes, edges, warning: enrichedWarning }),
-                signal: controller.signal,
-            });
+            
+            let attempt = 0;
+            const maxRetries = 2;
+            let response: Response | null = null;
 
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                throw new Error(err.error || `API error: ${response.status}`);
+            while (attempt <= maxRetries) {
+                response = await fetch("/api/ai/auto-resolve", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ nodes, edges, warning: enrichedWarning }),
+                    signal: controller.signal,
+                });
+
+                if (response.ok) break;
+
+                // If 503 or 429, retry
+                if (response.status === 503 || response.status === 429 || response.status >= 500) {
+                    attempt++;
+                    if (attempt > maxRetries) break;
+                    await new Promise(r => setTimeout(r, 1500 * attempt));
+                    continue;
+                }
+                break;
+            }
+
+            if (!response || !response.ok) {
+                const err = await response?.json().catch(() => ({})) || {};
+                throw new Error(err.error || `API error: ${response?.status}`);
             }
 
             const patch: AutoResolveResult = await response.json();

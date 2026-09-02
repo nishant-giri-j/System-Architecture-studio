@@ -160,14 +160,21 @@ export async function POST(request: Request) {
             );
         }
 
-        const model = process.env.AI_MODEL || "gemini-3.5-flash";
+        const model = process.env.AI_MODEL || "gemini-3.1-pro-preview";
 
         const google = createGoogleGenerativeAI({ apiKey });
 
         const systemPrompt = buildSystemPrompt(technologyLibrary);
 
         const { object } = await generateObject({
-            model: google(model),
+            model: google(model, {
+                safetySettings: [
+                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                ]
+            }),
             schema: AiArchitectureOutputSchema as any,
             system: systemPrompt,
             prompt: `Design the following architecture:\n\n${prompt.trim()}`,
