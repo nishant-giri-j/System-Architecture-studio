@@ -8,7 +8,7 @@ The user has designed a system architecture graph. Your job is to explain the CO
 Your explanation MUST include:
 1. End-to-end flow: From the moment a packet enters the system to the final response returned to the user.
 2. Logic Panel Rules: Detail what happens at EVERY single node based on its configured logic steps (e.g., conditions, cache hit/miss logic).
-3. Latency & Routing: Explain the node's configured latency model, workload intensity, routing strategy (broadcast vs load-balance).
+3. Latency, Hardware & Routing: Explain the node's configured latency model, workload intensity, hardware allocation (cpuCores, memoryMb, bandwidthCapacity), and routing strategy (broadcast vs load-balance).
 4. Wires & Protocols: Name the protocol used between nodes and the event name. Explain WHY a wire uses a specific edge style (e.g. step for async, bezier for sync).
 5. Success & Failure Paths: Explain why a packet might miss a cache, why it might error, why it might queue up (bottlenecks), and how the packet's shape or color in the simulation represents these states (e.g. green for success, red for error, yellow for warning/queue).
 

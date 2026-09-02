@@ -18,7 +18,9 @@ Your task is to analyze the logical correctness, data flow, error handling, comp
 - Architectural Anti-Patterns (Invalid Wiring): e.g., A client frontend connecting directly to a database without an API layer, or a queue connecting directly to a database without a worker service.
 
 2. Technology, Protocol & Latency Analysis:
-- Processing Delay & Bottlenecks: Look at the node's latency configuration (workload, concurrency, networkHops, nodeOverrideMs). Is the latency configuration extremely high for a node that handles synchronous, high-throughput traffic? (e.g., >250ms consistently causes bottleneck warnings).
+- Processing Delay & Bottlenecks: Look at the node's latency configuration (workload, concurrency, networkHops, nodeOverrideMs), hardware configuration (cpuCores, memoryMb), and bandwidthCapacity.
+- Hardware Starvation: If a node handles high throughput but has 1-2 CPU cores, very low memory, or low bandwidth (e.g. 1000 Kbps), flag it as a severe hardware bottleneck risk.
+- Protocol Mismatch: Are two nodes communicating using a protocol that makes no sense? (e.g., Redis via SQL, Kafka via REST).
 - Cache Thrashing: If a node has a "simulate-cache" logic step, is the hitRate configured so low (e.g., < 30%) that it causes cache thrashing?
 - Logic Step Compatibility: Is a node trying to do something impossible? (e.g. running complex SQL JOINs on a Redis cache).
 - Protocol Suitability: Are edges using the right protocol?

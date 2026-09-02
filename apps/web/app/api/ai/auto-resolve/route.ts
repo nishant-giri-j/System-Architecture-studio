@@ -22,6 +22,11 @@ const AutoResolveSchema = z.object({
             concurrency: z.number().optional(),
             latencyMultiplier: z.number().optional(),
             cacheHitRate: z.number().optional(),
+            hardware: z.object({
+                cpuCores: z.number(),
+                memoryMb: z.number()
+            }).optional(),
+            bandwidthCapacity: z.number().optional(),
             logicSteps: z.array(LogicStepSchema).max(10).optional(),
         }),
     })).max(10).describe("Existing nodes to patch. ONLY provide fields that need to change."),
@@ -34,6 +39,11 @@ const AutoResolveSchema = z.object({
         logicSteps: z.array(LogicStepSchema).max(10).optional(),
         processingDelay: z.number().optional(),
         concurrency: z.number().optional(),
+        hardware: z.object({
+            cpuCores: z.number(),
+            memoryMb: z.number()
+        }).optional(),
+        bandwidthCapacity: z.number().optional(),
     })).max(5).describe("New nodes to inject (e.g. adding a Queue). Use a short unique id like 'node-auto-q-1'."),
     
     edgesToAdd: z.array(z.object({
@@ -56,12 +66,13 @@ The user provides their current system architecture (nodes and edges), and the s
 
 Your job is to provide a minimal "Patch" to fix the issue.
 You can:
-1. Update existing nodes (e.g., adding logic steps, changing processingDelay).
+1. Update existing nodes (e.g., adding logic steps, upgrading hardware.cpuCores/memoryMb or bandwidthCapacity).
 2. Delete invalid edges.
 3. Inject new nodes (e.g., a Queue or Gateway).
 4. Add new edges to wire up the new nodes.
 
 CRITICAL VALUE RULES:
+- If resolving a hardware bottleneck (like Out of Memory, CPU starvation, or network congestion), provide a 'patch' that sets 'hardware' with realistic upgraded 'cpuCores' or 'memoryMb', or upgrade 'bandwidthCapacity'.
 - ALL string values MUST be SHORT. technologyId must be a simple kebab-case ID (e.g. "redis", "rabbitmq", "api-gateway", "nginx"). NEVER generate long compound strings.
 - Node labels must be 1-3 words maximum (e.g. "Message Queue", "Rate Limiter").
 - Node and edge IDs must be short like "node-auto-q-1" or "edge-auto-1".
@@ -115,6 +126,8 @@ export async function POST(req: Request) {
             label: n.data?.label ?? n.label,
             technologyId: n.data?.technologyId ?? n.technologyId,
             logicSteps: n.data?.logicSteps ?? n.logicSteps,
+            hardware: n.data?.hardware ?? n.hardware,
+            latency: n.data?.latency ?? n.latency,
         }));
         const leanEdges = edges.map((e: any) => ({
             id: e.id,

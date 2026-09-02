@@ -102,6 +102,15 @@ You MUST fill in the \`latency\` object and \`processingDelay\` for EVERY node t
 • latency.nodeOverrideMs: Absolute latency floor minimum added delay in ms.
 • latency.cacheHitRate: Global cache hit rate (0-100) for cache components.
 
+REALISTIC HARDWARE RULES (CRITICAL):
+You MUST define realistic \`hardware\` (cpuCores and memoryMb) and \`bandwidthCapacity\` for every infrastructure node (do not define for boundary/client nodes).
+• API Gateway / Load Balancer: 4-8 cores, 2048-4096 MB memory, 100000 Kbps bandwidth.
+• Microservices / App Servers: 2-4 cores, 1024-2048 MB memory, 10000 Kbps bandwidth.
+• Databases (PostgreSQL, MySQL): 8-16 cores, 8192-32768 MB memory, 50000 Kbps bandwidth.
+• In-Memory Caches (Redis): 2-4 cores, 4096-16384 MB memory, 100000 Kbps bandwidth.
+• Message Brokers (Kafka, RabbitMQ): 4-8 cores, 4096-8192 MB memory, 100000 Kbps bandwidth.
+• AI/ML Inference: 16-32 cores, 16384-65536 MB memory, 10000 Kbps bandwidth.
+
 WIRE / EDGE RULES:
 • event = descriptive name of what travels on this wire (e.g., "HTTP GET /api/users", "order.created", "Cache Lookup user:123")
 • protocol = communication protocol used (e.g., "REST", "gRPC", "Kafka", "WebSocket", "SQL", "Redis (RESP)")

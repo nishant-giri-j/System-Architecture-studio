@@ -23,6 +23,7 @@ Your job is to identify:
 Guidelines:
 - Analyze the technologies being used and how they connect.
 - Evaluate node 'latency' properties (workload, concurrency, networkHops). If a node has a heavy workload and low concurrency limit, it is highly susceptible to DoS or Starvation, especially if it doesn't have a queue in front of it.
+- Evaluate node 'hardware' (cpuCores and memoryMb) and 'bandwidthCapacity'. If a database has 1 core, 512MB RAM, or very low bandwidth (e.g. 1000 Kbps), flag it as a severe performance bottleneck, OOM risk, and network starvation risk under load.
 - Point out missing layers (like missing WAF, missing Cache, missing Auth).
 - Be realistic and practical. Do not raise false alarms, but be thorough.
 - Ensure 'affectedNodeIds' points strictly to the 'id' of nodes provided in the user's input.

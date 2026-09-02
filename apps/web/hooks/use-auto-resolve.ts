@@ -99,6 +99,8 @@ export function useAutoResolve(
                             ...(p.technologyId !== undefined && { technologyId: p.technologyId }),
                             ...(p.processingDelay !== undefined && { processingDelay: p.processingDelay }),
                             ...(p.logicSteps !== undefined && { logicSteps: p.logicSteps }),
+                            ...(p.hardware !== undefined && { hardware: p.hardware }),
+                            ...(p.bandwidthCapacity !== undefined && { bandwidthCapacity: p.bandwidthCapacity }),
                             // Nested latency fields
                             ...(Object.keys(latencyPatch).length > 0 && {
                                 latency: {
@@ -124,6 +126,8 @@ export function useAutoResolve(
                         color: newNode.color || '#ffffff',
                         logicSteps: newNode.logicSteps || [],
                         processingDelay: newNode.processingDelay || 0,
+                        ...(newNode.hardware !== undefined && { hardware: newNode.hardware }),
+                        ...(newNode.bandwidthCapacity !== undefined && { bandwidthCapacity: newNode.bandwidthCapacity }),
                         latency: {
                             concurrency: newNode.concurrency || 1,
                         },

@@ -154,6 +154,19 @@ export function useAiArchitect(): UseAiArchitectReturn {
                             })),
                             processingDelay: aiNode.processingDelay ?? 0,
                             routingStrategy: aiNode.routingStrategy ?? "broadcast",
+                            hardware: aiNode.hardware ? {
+                                cpuCores: aiNode.hardware.cpuCores,
+                                memoryMb: aiNode.hardware.memoryMb
+                            } : undefined,
+                            bandwidthCapacity: aiNode.bandwidthCapacity,
+                            latency: aiNode.latency ? {
+                                latencyMultiplier: aiNode.latency.latencyMultiplier,
+                                cacheHitRate: aiNode.latency.cacheHitRate,
+                                concurrency: aiNode.latency.concurrency,
+                                workload: aiNode.latency.workload,
+                                networkHops: aiNode.latency.networkHops,
+                                nodeOverrideMs: aiNode.latency.nodeOverrideMs
+                            } : undefined,
                         },
                     }),
                 );

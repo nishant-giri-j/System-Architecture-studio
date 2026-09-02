@@ -108,6 +108,11 @@ export const AiNodeSchema = z.object({
         .enum(["broadcast", "load-balance"])
         .default("broadcast")
         .describe("How this node routes traffic. Use 'load-balance' for API Gateways/Load Balancers to pick one downstream target. Use 'broadcast' for general fan-out."),
+    hardware: z.object({
+        cpuCores: z.number().describe("Number of CPU cores allocated to this node, e.g. 1 to 64. Lower causes queue bottlenecks."),
+        memoryMb: z.number().describe("Memory allocated to this node in MB, e.g. 512, 1024, 8192. Lower causes out of memory errors."),
+    }).optional(),
+    bandwidthCapacity: z.number().describe("Network bandwidth capacity in Kbps, e.g. 1000, 10000").optional(),
     latency: z.object({
         latencyMultiplier: z.number().describe("Multiplier for base latency, typically 1.0"),
         cacheHitRate: z.number().describe("Global cache hit rate for the node (0-100)"),

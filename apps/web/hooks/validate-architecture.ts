@@ -88,6 +88,14 @@ export function validateArchitecture(
                 nodeId: node.id
             });
         }
+        
+        if (node.data.bandwidthCapacity && node.data.bandwidthCapacity < 10000 && (tech?.category === 'data' || tech?.category === 'storage')) {
+            warnings.push({
+                id: `low-bandwidth-db-${node.id}`,
+                message: `Hardware Risk: Database "${node.data.label}" is limited to ${node.data.bandwidthCapacity} Kbps bandwidth. High risk of severe network congestion and throttling under heavy loads.`,
+                nodeId: node.id
+            });
+        }
     }
 
     // 6. High Error Rate Intentionally Set
