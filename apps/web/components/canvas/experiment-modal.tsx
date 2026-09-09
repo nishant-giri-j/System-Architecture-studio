@@ -894,21 +894,51 @@ export function ExperimentModal({
                         
                         // AUTO-GENERATE LOGIC IF AI FORGOT OR PROVIDED NONE
                         if (initialLogicSteps.length === 0) {
-                            if (val.outgoingConnections && Array.isArray(val.outgoingConnections)) {
-                                val.outgoingConnections.forEach((outId: string, i: number) => {
-                                    initialLogicSteps.push({
-                                        id: `auto-fwd-${i}`,
-                                        action: 'forward',
-                                        targetNodeId: outId,
-                                        condition: 'always'
+                            const isCache = val.technologyId?.toLowerCase().includes('cache') || val.technologyId?.includes('redis') || val.technologyId?.includes('memcached');
+                            if (isCache) {
+                                initialLogicSteps.push({
+                                    id: 'auto-sim-cache',
+                                    action: 'simulate-cache',
+                                    condition: 'always',
+                                    hitRate: val.cacheHitRate || 80
+                                });
+                                initialLogicSteps.push({
+                                    id: 'auto-reply-hit',
+                                    action: 'reply',
+                                    condition: 'on-hit'
+                                });
+                                if (val.outgoingConnections && Array.isArray(val.outgoingConnections)) {
+                                    val.outgoingConnections.forEach((outId: string, i: number) => {
+                                        initialLogicSteps.push({
+                                            id: `auto-fwd-miss-${i}`,
+                                            action: 'forward',
+                                            targetNodeId: outId,
+                                            condition: 'on-miss'
+                                        });
                                     });
+                                }
+                                initialLogicSteps.push({
+                                    id: 'auto-reply-miss',
+                                    action: 'reply',
+                                    condition: 'on-miss'
+                                });
+                            } else {
+                                if (val.outgoingConnections && Array.isArray(val.outgoingConnections)) {
+                                    val.outgoingConnections.forEach((outId: string, i: number) => {
+                                        initialLogicSteps.push({
+                                            id: `auto-fwd-${i}`,
+                                            action: 'forward',
+                                            targetNodeId: outId,
+                                            condition: 'always'
+                                        });
+                                    });
+                                }
+                                initialLogicSteps.push({
+                                    id: 'auto-reply',
+                                    action: 'reply',
+                                    condition: 'always'
                                 });
                             }
-                            initialLogicSteps.push({
-                                id: 'auto-reply',
-                                action: 'reply',
-                                condition: 'always'
-                            });
                         }
 
                         nextNodes.push({
@@ -919,10 +949,10 @@ export function ExperimentModal({
                                 label: val.label,
                                 technologyId: val.technologyId,
                                 color: '#161616',
-                                processingDelay: 0,
-                                errorRate: 0,
-                                latency: {},
-                                routingStrategy: 'broadcast',
+                                processingDelay: val.processingDelay || 0,
+                                errorRate: val.errorRate || 0,
+                                latency: val.latency || {},
+                                routingStrategy: val.routingStrategy || 'broadcast',
                                 logicSteps: initialLogicSteps,
                                 hardware: (val.hardware && typeof val.hardware === 'object' && !Array.isArray(val.hardware)) ? val.hardware : undefined,
                                 cacheHitRate: val.cacheHitRate || 0,
@@ -940,7 +970,7 @@ export function ExperimentModal({
                                     sourceHandle: 'right',
                                     targetHandle: 'left',
                                     type: 'event',
-                                    data: { protocol: 'HTTP', rps: 1 }
+                                    data: { protocol: val.protocol || 'HTTP', rps: 1 }
                                 });
 
                                 // Auto-patch the upstream node to actually route traffic to our new node!
@@ -969,7 +999,7 @@ export function ExperimentModal({
                                 sourceHandle: 'right',
                                 targetHandle: 'left',
                                 type: 'event',
-                                data: { protocol: 'HTTP', rps: 1 }
+                                data: { protocol: val.protocol || 'HTTP', rps: 1 }
                             });
 
                             nextNodes = nextNodes.map((n: any) => {
@@ -999,7 +1029,7 @@ export function ExperimentModal({
                                     sourceHandle: 'right',
                                     targetHandle: 'left',
                                     type: 'event',
-                                    data: { protocol: 'HTTP', rps: 1 }
+                                    data: { protocol: val.protocol || 'HTTP', rps: 1 }
                                 });
                             });
                         }
@@ -1222,12 +1252,14 @@ export function ExperimentModal({
                         {!isMinimized && (
 
                             <button
-
-                                onClick={() => { handleCancel(); onClose(); }}
+                                onClick={() => { 
+                                    if (status === 'running' || status === 'agent-thinking') {
+                                        handleCancel();
+                                    }
+                                    onClose(); 
+                                }}
                                 className="grid h-10 w-10 place-items-center border-[3px] border-[#161616] bg-white transition-colors hover:bg-[#ff6b6b] hover:text-white"
-
                             >
-
                                 <X size={24} strokeWidth={3} />
 
                             </button>

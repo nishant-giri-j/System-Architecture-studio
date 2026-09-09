@@ -94,6 +94,7 @@ interface BranchJoinState {
     expected: number;
     completed: number;
     hasFailed?: boolean;
+    accumulatedConditions: Set<string>;
 }
 
 function deterministicSample(value: string): number {
@@ -842,6 +843,7 @@ export function useSimulation(
                                     expected: chosenForwardSteps.length,
                                     completed: 0,
                                     hasFailed: false,
+                                    accumulatedConditions: new Set<string>()
                                 };
                             }
                             
@@ -850,9 +852,34 @@ export function useSimulation(
                             finalStepsToRun.forEach(step => {
                                 if (step.action === 'forward' && step.targetNodeId) {
                                     const edge = outgoingEdges.find(e => e.target === step.targetNodeId);
-                                    if (edge) forward(edge, 'request', '#ff4fa3');
+                                    if (edge) {
+                                        forward(edge, 'request', '#ff4fa3');
+                                    } else {
+                                        if (!warnedNodesRef.current.has(`${node.id}-broken-route-req`)) {
+                                            warnedNodesRef.current.add(`${node.id}-broken-route-req`);
+                                            if (onWarning) onWarning({ id: crypto.randomUUID(), type: 'wiring', message: `Broken Routing: Logic step points to a node without an edge. Packet dropped.`, timestamp: new Date(), nodeId: node.id });
+                                        }
+                                        updateMetricsNow((m) => ({ ...m, droppedRequests: m.droppedRequests + 1, totalErrors: m.totalErrors + 1 }));
+                                        
+                                        if (pulse.callerId) {
+                                            reply('cache-miss', '#ff6b6b', pulse.callerId, 502);
+                                        } else {
+                                            updateMetricsNow(m => ({ ...m, inFlightRequests: Math.max(0, m.inFlightRequests - 1), completedRequests: m.completedRequests + 1 }));
+                                            const req = requestLatencies.current[pulse.requestId];
+                                            if (req) {
+                                                req.lifecycle = 'failed';
+                                                delete requestLatencies.current[pulse.requestId];
+                                            }
+                                        }
+                                    }
                                 } else if (step.action === 'reply' && pulse.callerId) {
-                                    reply('response', '#9cf57a', pulse.callerId, 200);
+                                    if (conditions.has('on-miss')) {
+                                        reply('cache-miss', '#ffad66', pulse.callerId, 404);
+                                    } else if (conditions.has('on-error')) {
+                                        reply('cache-miss', '#ff6b6b', pulse.callerId, 500);
+                                    } else {
+                                        reply('response', '#9cf57a', pulse.callerId, 200);
+                                    }
                                 } else if (step.action === 'simulate-cache') {
                                     trace(`[${node.data.label}] Checking cache...`, '#ffde59', 'cache');
                                     // Use the slider hit rate if defined, otherwise fallback to step hit rate or 80
@@ -895,7 +922,7 @@ export function useSimulation(
                         
                         if (!hasLogic) return; // Drop if no logic
 
-                        const conditions = new Set<string>();
+                        let conditions = new Set<string>();
                         if (!isError) conditions.add('on-success');
                         if (isError) conditions.add('on-error');
                         if (isMiss) conditions.add('on-miss');
@@ -907,11 +934,14 @@ export function useSimulation(
                             joinState.completed += 1;
                             if (isError) joinState.hasFailed = true;
                             
+                            conditions.forEach(c => joinState.accumulatedConditions.add(c));
+                            
                             if (joinState.completed < joinState.expected) {
                                 return; // Still waiting for more branches to complete
                             }
                             
                             delete branchJoins.current[joinKey];
+                            conditions = joinState.accumulatedConditions;
                             if (joinState.hasFailed) {
                                 conditions.delete('on-success');
                                 conditions.delete('on-hit');

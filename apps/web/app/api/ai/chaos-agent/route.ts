@@ -3,6 +3,18 @@ export const maxDuration = 60; // Allow up to 60 seconds for AI generation (Verc
 import { generateObject } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
+import { technologyLibrary, type TechnologyDefinition } from '@architecture-studio/shared';
+
+function buildTechCatalogue(techs: TechnologyDefinition[]): string {
+    const grouped: Record<string, string[]> = {};
+    for (const t of techs) {
+        if (!grouped[t.category]) grouped[t.category] = [];
+        grouped[t.category]!.push(t.id);
+    }
+    return Object.entries(grouped)
+        .map(([cat, ids]) => `  [${cat}]: ${ids.join(", ")}`)
+        .join("\n");
+}
 
 export async function POST(req: Request) {
     try {
@@ -38,12 +50,17 @@ export async function POST(req: Request) {
         const { object } = await generateObject({
             model,
             system: `You are an expert Chaos Engineering and System Architecture AI.
-Your job is to propose experiments to break or scale the user's system, OR conclude if requested or if you've exhausted hypotheses.
+Your job is to propose experiments to break or scale the user's system.
+If the history is empty, you MUST choose PROPOSE_EXPERIMENTS. NEVER CONCLUDE on the first turn.
+You may only CONCLUDE if explicitly requested by the user, or if you have already run multiple experiments in the history and have exhausted all hypotheses.
 
 CURRENT ARCHITECTURE:
 ${nodeSummary}
 
 ${edgeSummary}
+
+AVAILABLE TECHNOLOGIES (Use these EXACT IDs for technologyId when using ADD_NODE):
+${buildTechCatalogue(technologyLibrary)}
 
 Valid Target Fields you can mutate in UPDATE_NODE:
 - "latency.base" (number, base latency in ms, 5 to 500)
@@ -56,14 +73,14 @@ Valid Target Fields you can mutate in UPDATE_NODE:
 CRITICAL RULES:
 1. Structural & Hardware Mutations: You have total control. You can crash a node via OOM by mutating "hardware.memoryMb" to 128. You can cause network congestion by mutating "bandwidthCapacity". You can DELETE_NODE or DELETE_EDGE. You can rewrite routing by targeting "routingStrategy".
 2. Dynamic Traffic & Payloads: You can use the 'UPDATE_TRAFFIC' action to launch DDoS attacks or large file uploads. For UPDATE_TRAFFIC, the values array must contain objects like: {"rps": 5000, "payloadKb": 500}.
-3. Spawning Nodes (ADD_NODE): You MUST format the ADD_NODE value EXACTLY like this JSON object:
-{"label": "Auth Middleware", "technologyId": "nodejs", "incomingConnections": ["gateway-id"], "outgoingConnections": ["service-id"], "hardware": { "memoryMb": 2048, "cpuCores": 2 }, "logicSteps": [{ "id": "s1", "action": "forward", "targetNodeId": "service-id", "condition": "always" }, { "id": "s2", "action": "reply", "condition": "always" }]}
+3. Spawning Nodes (ADD_NODE): You MUST format the ADD_NODE value EXACTLY like this JSON object: {"label": "Auth Middleware", "technologyId": "nodejs", "incomingConnections": ["<EXACT_REAL_NODE_ID>"], "outgoingConnections": ["<EXACT_REAL_NODE_ID>"], "protocol": "gRPC", "processingDelay": 15, "errorRate": 2, "hardware": { "memoryMb": 2048, "cpuCores": 2 }, "logicSteps": [{ "id": "s1", "action": "forward", "targetNodeId": "<EXACT_REAL_NODE_ID>", "condition": "always" }, { "id": "s2", "action": "reply", "condition": "always" }]}
 NEVER use a flat array or stringified JSON for logicSteps or hardware! They MUST be proper nested JSON objects! ALWAYS explicitly define 'targetId' in the mutation so you can reference it.
 4. Integrating Nodes: If you ADD_NODE, it sits idle unless upstream nodes route traffic to it! Use 'UPDATE_NODE' targeting "logicSteps" on upstream nodes to rewrite their logic array to include a 'forward' step pointing to your new node's targetId. You are given the current LogicSteps; supply the FULL modified array in your mutation value!
 5. Logic Step Engine (CRITICAL): The simulation is bidirectional! If a node receives a request, it MUST have a 'reply' step (e.g. {"id":"r1", "action":"reply", "condition":"always"}) to send the response back! If you omit 'reply', packets get stuck in a routing black hole! Use 'forward' to send packets to downstream dependencies.
-6. Dynamic Steps: Every plan has a \`stepCount\` (e.g. 3). Every mutation MUST provide an array of \`values\` exactly matching the \`stepCount\` length.
+6. Dynamic Steps: Every plan has a \`stepCount\` (e.g. 3). Every mutation MUST provide an array of \`values\` exactly matching the \`stepCount\` length. If stepCount is 3, you MUST provide 3 values in the array (e.g. [valueForStep1, valueForStep2, valueForStep3]).
 7. Learn from History: Do NOT repeat an experiment that is already in the history.
 8. Analysis: For EVERY response, provide an 'analysis' string.
+9. EXACT IDs (CRITICAL RULE): You MUST use the exact IDs provided in the CURRENT ARCHITECTURE list above. Do NOT make up placeholder IDs like 'node-api-gateway' or 'gateway-id'. Look at the CURRENT ARCHITECTURE and use the real ID (e.g., 'd9f8e434-1234-5678').
 `,
 
             prompt: `USER PROMPT: ${prompt}${historyPrompt}`,
