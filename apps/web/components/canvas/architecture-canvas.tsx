@@ -314,6 +314,7 @@ export function ArchitectureCanvas() {
     const [maxInFlight, setMaxInFlight] = useState(100);
     const [totalLimit, setTotalLimit] = useState(1000);
     const [systemWarnings, setSystemWarnings] = useState<SystemWarning[]>([]);
+    const [dismissedWarnings, setDismissedWarnings] = useState<Set<string>>(new Set());
     const [isWarningsPanelOpen, setIsWarningsPanelOpen] = useState(false);
     const [toasts, setToasts] = useState<{ id: string; message: string }[]>([]);
 
@@ -374,7 +375,7 @@ export function ArchitectureCanvas() {
         })));
     }, [nodes, edges, technologies]);
 
-    const activeWarnings = [...structuralWarnings, ...systemWarnings];
+    const activeWarnings = [...structuralWarnings, ...systemWarnings].filter(w => !dismissedWarnings.has(w.id));
 
     // Reset chaosTargetId if the selected node is deleted
     useEffect(() => {
@@ -3015,9 +3016,22 @@ export function ArchitectureCanvas() {
                                             <span className="text-[10px] font-black uppercase bg-[#ff6b6b] text-white px-1 py-0.5 inline-block">
                                                 {warning.type}
                                             </span>
-                                            <span className="text-[10px] text-gray-500 font-bold">
-                                                {warning.timestamp.toLocaleTimeString()}
-                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] text-gray-500 font-bold">
+                                                    {warning.timestamp.toLocaleTimeString()}
+                                                </span>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setDismissedWarnings(prev => new Set(prev).add(warning.id));
+                                                        setSystemWarnings(prev => prev.filter(w => w.id !== warning.id));
+                                                    }}
+                                                    className="hover:bg-gray-100 p-0.5 rounded transition-colors"
+                                                    title="Dismiss warning"
+                                                >
+                                                    <X size={12} className="text-gray-400 hover:text-gray-700" />
+                                                </button>
+                                            </div>
                                         </div>
                                         <p className="text-xs font-bold mt-1 text-gray-700">
                                             {warning.message}
@@ -3057,6 +3071,11 @@ export function ArchitectureCanvas() {
                             <div className="p-3 border-t-[3px] border-[#161616] bg-gray-50 flex justify-end">
                                 <button
                                     onClick={() => {
+                                        setDismissedWarnings(prev => {
+                                            const next = new Set(prev);
+                                            activeWarnings.forEach(w => next.add(w.id));
+                                            return next;
+                                        });
                                         setSystemWarnings([]);
                                         clearWarnings();
                                     }}
