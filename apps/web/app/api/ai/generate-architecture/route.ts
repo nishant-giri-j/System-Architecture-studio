@@ -167,14 +167,7 @@ export async function POST(request: Request) {
         const systemPrompt = buildSystemPrompt(technologyLibrary);
 
         const { object } = await generateObject({
-            model: google(model, {
-                safetySettings: [
-                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-                ]
-            }),
+            model: google(model),
             schema: AiArchitectureOutputSchema as any,
             system: systemPrompt,
             prompt: `Design the following architecture:\n\n${prompt.trim()}`,

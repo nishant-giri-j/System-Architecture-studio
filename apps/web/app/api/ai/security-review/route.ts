@@ -58,14 +58,7 @@ export async function POST(req: Request) {
         const promptText = `Analyze the following architecture for security risks, SPOFs, and bottlenecks:\n\nNodes:\n${JSON.stringify(nodes, null, 2)}\n\nEdges:\n${JSON.stringify(edges, null, 2)}`;
 
         const { object } = await generateObject({
-            model: google(process.env.AI_MODEL || "gemini-3.1-pro-preview", {
-                safetySettings: [
-                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-                ]
-            }),
+            model: google(process.env.AI_MODEL || "gemini-3.1-pro-preview"),
             schema: AiSecurityReviewSchema as any, // Cast as any to avoid TS2589
             system: SYSTEM_PROMPT,
             prompt: promptText,
